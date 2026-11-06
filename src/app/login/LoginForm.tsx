@@ -2,23 +2,68 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Eye, EyeOff, Loader2, Check } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import { Eye, EyeOff, Loader2, Check, UserRound, AlertCircle } from "lucide-react";
 import { BrandMark } from "@/components/BrandMark";
 import { GoogleIcon } from "@/components/GoogleIcon";
 import { CurrentYear } from "@/components/CurrentYear";
 import { brand } from "@/lib/brand";
+import { guestRequest, loginRequest, safeNext } from "@/lib/auth/client";
+import { isValidEmail } from "@/lib/auth/validation";
 
 export function LoginForm() {
+  const router = useRouter();
   const [showPw, setShowPw] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [guestLoading, setGuestLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  // UI only for now — backend auth is wired in a later phase.
-  function onSubmit(e: React.FormEvent) {
+  const busy = loading || guestLoading;
+
+  function destination(): string {
+    if (typeof window === "undefined") return "/dashboard";
+    const params = new URLSearchParams(window.location.search);
+    return safeNext(params.get("next"));
+  }
+
+  async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    setError(null);
+
+    if (!isValidEmail(email)) {
+      setError("Enter a valid email address.");
+      return;
+    }
+    if (!password) {
+      setError("Enter your password.");
+      return;
+    }
+
     setLoading(true);
-    setTimeout(() => setLoading(false), 900);
+    const result = await loginRequest(email, password);
+    if (!result.ok) {
+      setError(result.error);
+      setLoading(false);
+      return;
+    }
+    router.push(destination());
+    router.refresh();
+  }
+
+  async function onGuest() {
+    setError(null);
+    setGuestLoading(true);
+    const result = await guestRequest();
+    if (!result.ok) {
+      setError(result.error);
+      setGuestLoading(false);
+      return;
+    }
+    router.push("/dashboard");
+    router.refresh();
   }
 
   return (
@@ -33,7 +78,7 @@ export function LoginForm() {
               "radial-gradient(50% 40% at 30% 10%, rgba(48,166,109,0.35) 0%, transparent 70%)",
           }}
         />
-        <Link href="/" className="relative" aria-label="AiWave home">
+        <Link href="/" className="relative" aria-label={`${brand.name} home`}>
           <span className="inline-flex items-center gap-2 text-primary-foreground">
             <BrandMark showName={false} />
             <span className="text-lg font-extrabold tracking-tight text-white">
@@ -71,7 +116,7 @@ export function LoginForm() {
       <div className="flex flex-1 items-center justify-center px-5 py-10 sm:px-8">
         <div className="w-full max-w-sm">
           <div className="lg:hidden">
-            <Link href="/" aria-label="AiWave home">
+            <Link href="/" aria-label={`${brand.name} home`}>
               <BrandMark />
             </Link>
           </div>
@@ -83,10 +128,16 @@ export function LoginForm() {
             Log in to continue to {brand.name}.
           </p>
 
-          {/* Google login */}
+          {/* Google login (configured from the dashboard; informs the user when not) */}
           <button
             type="button"
-            className="mt-7 flex h-11 w-full items-center justify-center gap-3 rounded-full border border-border-strong bg-surface text-[15px] font-semibold text-foreground transition-colors hover:bg-surface-muted"
+            disabled={busy}
+            onClick={() =>
+              toast.info("Google sign-in isn’t configured yet.", {
+                description: "Use email and password, or continue as a guest.",
+              })
+            }
+            className="mt-7 flex h-11 w-full items-center justify-center gap-3 rounded-full border border-border-strong bg-surface text-[15px] font-semibold text-foreground transition-colors hover:bg-surface-muted disabled:opacity-60"
           >
             <GoogleIcon />
             Continue with Google
@@ -98,7 +149,17 @@ export function LoginForm() {
             <span className="h-px flex-1 bg-border" />
           </div>
 
-          <form onSubmit={onSubmit} className="space-y-4">
+          {error && (
+            <div
+              role="alert"
+              className="mb-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3.5 py-3 text-sm text-red-700"
+            >
+              <AlertCircle size={16} className="mt-0.5 shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
+
+          <form onSubmit={onSubmit} className="space-y-4" noValidate>
             <div>
               <label
                 htmlFor="email"
@@ -112,9 +173,10 @@ export function LoginForm() {
                 required
                 autoComplete="email"
                 value={email}
+                disabled={busy}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@example.com"
-                className="h-11 w-full rounded-xl border border-border bg-surface px-4 text-[15px] text-foreground outline-none transition-shadow placeholder:text-muted/70 focus:border-accent focus:ring-2 focus:ring-accent/25"
+                className="h-11 w-full rounded-xl border border-border bg-surface px-4 text-[15px] text-foreground outline-none transition-shadow placeholder:text-muted/70 focus:border-accent focus:ring-2 focus:ring-accent/25 disabled:opacity-60"
               />
             </div>
 
@@ -126,7 +188,10 @@ export function LoginForm() {
                 >
                   Password
                 </label>
-                <a href="#" className="text-sm font-medium text-accent-dark hover:underline">
+                <a
+                  href="#"
+                  className="text-sm font-medium text-accent-dark hover:underline"
+                >
                   Forgot?
                 </a>
               </div>
@@ -137,9 +202,10 @@ export function LoginForm() {
                   required
                   autoComplete="current-password"
                   value={password}
+                  disabled={busy}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="h-11 w-full rounded-xl border border-border bg-surface px-4 pr-11 text-[15px] text-foreground outline-none transition-shadow placeholder:text-muted/70 focus:border-accent focus:ring-2 focus:ring-accent/25"
+                  className="h-11 w-full rounded-xl border border-border bg-surface px-4 pr-11 text-[15px] text-foreground outline-none transition-shadow placeholder:text-muted/70 focus:border-accent focus:ring-2 focus:ring-accent/25 disabled:opacity-60"
                 />
                 <button
                   type="button"
@@ -154,16 +220,36 @@ export function LoginForm() {
 
             <button
               type="submit"
-              disabled={loading}
+              disabled={busy}
               className="flex h-11 w-full items-center justify-center gap-2 rounded-full bg-primary text-[15px] font-semibold text-primary-foreground transition-all hover:bg-black active:scale-[0.99] disabled:opacity-60"
             >
               {loading ? <Loader2 size={18} className="animate-spin" /> : "Log in"}
             </button>
           </form>
 
+          {/* Guest login */}
+          <button
+            type="button"
+            onClick={onGuest}
+            disabled={busy}
+            className="mt-3 flex h-11 w-full items-center justify-center gap-2 rounded-full border border-border-strong bg-surface text-[15px] font-semibold text-foreground transition-colors hover:bg-surface-muted disabled:opacity-60"
+          >
+            {guestLoading ? (
+              <Loader2 size={18} className="animate-spin" />
+            ) : (
+              <>
+                <UserRound size={17} />
+                Continue as guest
+              </>
+            )}
+          </button>
+
           <p className="mt-6 text-center text-sm text-muted">
             New to {brand.name}?{" "}
-            <Link href="/login" className="font-semibold text-accent-dark hover:underline">
+            <Link
+              href="/signup"
+              className="font-semibold text-accent-dark hover:underline"
+            >
               Create an account
             </Link>
           </p>
