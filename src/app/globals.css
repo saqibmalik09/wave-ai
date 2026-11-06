@@ -1,26 +1,161 @@
 @import "tailwindcss";
 
+/*
+  AiWave design tokens.
+  Colors scanned from the reference app with REA + browser CDP so the look
+  matches exactly. No external assets are referenced anywhere — fonts are
+  self-hosted via next/font and all icons/marks are inline SVG, so the site
+  never breaks if a third-party URL goes down or changes.
+*/
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #fdfdfc; /* near-white, very slightly warm */
+  --surface: #ffffff;
+  --surface-muted: #faf8f6; /* warm off-white sections */
+  --foreground: #1b2230; /* body text */
+  --heading: #0a0a0a; /* headings */
+  --muted: #6b7280; /* secondary text */
+
+  --primary: #262626; /* near-black CTA buttons */
+  --primary-foreground: #fafafa;
+
+  --accent: #30a66d; /* brand green */
+  --accent-dark: #0b7a4f;
+  --accent-tint: #e5f6ea; /* light green background */
+  --accent-border: #9fd9bb;
+
+  --border: #e2e5ea; /* default hairline border */
+  --border-strong: #d6dae1;
+  --ring: #30a66d;
+
+  --radius: 0.75rem;
 }
 
 @theme inline {
   --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-heading: var(--heading);
+  --color-muted: var(--muted);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-dark: var(--accent-dark);
+  --color-accent-tint: var(--accent-tint);
+  --color-accent-border: var(--accent-border);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-ring: var(--ring);
+  --font-sans: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
+  --radius-xl: 1rem;
+  --radius-2xl: 1.25rem;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  border-color: var(--border);
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Respect users who prefer less motion. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Subtle, GPU-friendly reveal used by section wrappers. */
+@keyframes aw-fade-up {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 16px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+/*
+  Pure-CSS reveal. The element's resting state is fully visible; the animation
+  only plays it in on load. `both` keeps it hidden during an optional stagger
+  delay, then lands on the visible `to` frame. No JS is involved, so content is
+  always present for SEO and can never be stuck invisible if hydration fails.
+*/
+.aw-reveal {
+  animation: aw-fade-up 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--aw-delay, 0s);
+}
+
+/*
+  Three-row model marquee. Each track is two identical sets, and each set
+  includes the trailing gap, so translating by exactly half the track width
+  loops with no seam. One transform animation per row; no per-frame work.
+  rtl travels left, ltr travels right.
+*/
+.aw-marquee-row {
+  width: 100%;
+  overflow: hidden;
+  padding-block: 0.375rem;
+}
+
+.aw-marquee-track {
+  display: flex;
+  width: max-content;
+  will-change: transform;
+}
+
+.aw-marquee-set {
+  display: flex;
+  flex-shrink: 0;
+  gap: 0.5rem;
+  padding-right: 0.5rem;
+}
+
+.aw-marquee-rtl {
+  animation: aw-marquee-rtl 70s linear infinite;
+}
+
+.aw-marquee-ltr {
+  animation: aw-marquee-ltr 70s linear infinite;
+}
+
+@keyframes aw-marquee-rtl {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
+@keyframes aw-marquee-ltr {
+  from {
+    transform: translate3d(-50%, 0, 0);
+  }
+  to {
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aw-marquee-rtl,
+  .aw-marquee-ltr {
+    animation: none;
+  }
 }
