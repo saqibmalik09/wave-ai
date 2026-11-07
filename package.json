@@ -14,7 +14,7 @@
     "deploy": "bash scripts/deploy.sh"
   },
   "prisma": {
-    "seed": "node --experimental-strip-types prisma/seed.ts"
+    "seed": "node prisma/seed.mjs"
   },
   "dependencies": {
     "@prisma/client": "6.19.3",

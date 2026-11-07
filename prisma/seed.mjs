@@ -1,25 +1,17 @@
 /**
  * Idempotent database seed — safe to run on every deploy.
+ * Plain .mjs so it runs on Node 20+ without --experimental-strip-types.
  *
- * Seeds:
- *   1. BrandConfig (single row, id = 1) — appName from APP_NAME env, else "AiWave".
- *   2. Default plans — a "free" plan whose messageQuota matches the dashboard's
- *      "X out of 10 messages", plus an example promotional plan.
- *   3. The super-admin (role SUPERADMIN) from SUPERADMIN_* env, only if a hash
- *      is provided. Existing rows are never overwritten (password/role kept).
- *
- * Run via `prisma db seed` (configured in package.json), or directly from the
- * deploy script. Reads DATABASE_URL + SUPERADMIN_* from the environment.
+ * Seeds BrandConfig, Free + Promo plans, and optional SUPERADMIN from env.
  */
 import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
-async function seedBrand(): Promise<void> {
+async function seedBrand() {
   const appName = process.env.APP_NAME?.trim() || "AiWave";
   await prisma.brandConfig.upsert({
     where: { id: 1 },
-    // Only fill the row when it doesn't exist; never clobber an admin's edits.
     update: {},
     create: {
       id: 1,
@@ -32,8 +24,7 @@ async function seedBrand(): Promise<void> {
   console.log(`  brand: ensured (appName="${appName}")`);
 }
 
-async function seedPlans(): Promise<void> {
-  // Free plan — quota matches the dashboard "0 out of 10 messages used".
+async function seedPlans() {
   await prisma.plan.upsert({
     where: { code: "free" },
     update: {},
@@ -56,7 +47,6 @@ async function seedPlans(): Promise<void> {
     },
   });
 
-  // Example promotional plan — comped by an admin, not sold. Higher quota.
   await prisma.plan.upsert({
     where: { code: "promo" },
     update: {},
@@ -82,7 +72,7 @@ async function seedPlans(): Promise<void> {
   console.log('  plans: ensured ("free" quota 10, "promo" quota 100)');
 }
 
-async function seedSuperAdmin(): Promise<void> {
+async function seedSuperAdmin() {
   const email = process.env.SUPERADMIN_EMAIL?.trim().toLowerCase();
   const passwordHash = process.env.SUPERADMIN_PASSWORD_HASH?.trim();
   const name = process.env.SUPERADMIN_NAME?.trim() || "Admin";
@@ -96,7 +86,6 @@ async function seedSuperAdmin(): Promise<void> {
 
   await prisma.user.upsert({
     where: { email },
-    // Never overwrite an existing account's password or role.
     update: {},
     create: {
       email,
@@ -108,7 +97,7 @@ async function seedSuperAdmin(): Promise<void> {
   console.log(`  super-admin: ensured (${email})`);
 }
 
-async function main(): Promise<void> {
+async function main() {
   console.log("Seeding database (idempotent)...");
   await seedBrand();
   await seedPlans();
