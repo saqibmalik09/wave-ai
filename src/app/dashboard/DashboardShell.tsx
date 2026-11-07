@@ -163,6 +163,9 @@ export function DashboardShell({
       <Sidebar
         user={user}
         isGuest={isGuest}
+        appName={appName}
+        planName={planName}
+        messageQuota={messageQuota}
         collapsed={collapsed}
         mobileOpen={mobileOpen}
         active={active}
@@ -184,7 +187,7 @@ export function DashboardShell({
           >
             <Menu size={20} />
           </button>
-          <BrandMark />
+          <BrandMark name={appName} />
         </header>
 
         <main className="flex flex-1 flex-col items-center justify-center overflow-y-auto px-4 py-10 sm:px-6">
@@ -196,7 +199,7 @@ export function DashboardShell({
             <PromptBox
               value={prompt}
               onChange={setPrompt}
-              placeholder={promptPlaceholder(active)}
+              placeholder={promptPlaceholder(active, appName)}
             />
 
             <div className="mt-5 flex flex-wrap items-center justify-center gap-2.5">
@@ -240,6 +243,9 @@ export function DashboardShell({
 function Sidebar({
   user,
   isGuest,
+  appName,
+  planName,
+  messageQuota,
   collapsed,
   mobileOpen,
   active,
@@ -250,6 +256,9 @@ function Sidebar({
 }: {
   user: SessionUser;
   isGuest: boolean;
+  appName: string;
+  planName: string;
+  messageQuota: number;
   collapsed: boolean;
   mobileOpen: boolean;
   active: string;
@@ -271,10 +280,10 @@ function Sidebar({
       <div className="flex h-14 items-center justify-between px-3">
         <Link
           href="/"
-          aria-label={`${brand.name} home`}
+          aria-label={`${appName} home`}
           className={cn("overflow-hidden", collapsed && "md:w-8")}
         >
-          <BrandMark showName={!collapsed} />
+          <BrandMark showName={!collapsed} name={appName} />
         </Link>
         <div className="flex items-center gap-1">
           {!collapsed && (
