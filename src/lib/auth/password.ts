@@ -5,7 +5,12 @@
  * ships with Node, is resistant to GPU brute force, and a few lines here do the
  * job. Server-only (uses `node:crypto`); never import from a Client Component.
  *
- * Stored format: `scrypt$<saltHex>$<hashHex>`.
+ * Stored format: `scrypt:<saltHex>:<hashHex>`.
+ *
+ * We use `:` (not `$`) as the delimiter on purpose: when the super-admin hash
+ * lives in an env var, dotenv-expand would treat `$...` segments as variable
+ * references and silently strip them. `:` is safe in env values. For backward
+ * compatibility, verification still accepts the older `$`-delimited format.
  */
 import { randomBytes, scrypt, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
@@ -24,15 +29,16 @@ const KEY_LEN = 64;
 export async function hashPassword(password: string): Promise<string> {
   const salt = randomBytes(16);
   const derived = await scryptAsync(password, salt, KEY_LEN, PARAMS);
-  return `scrypt$${salt.toString("hex")}$${derived.toString("hex")}`;
+  return `scrypt:${salt.toString("hex")}:${derived.toString("hex")}`;
 }
 
-/** Verifies a plaintext password against a stored `scrypt$...` hash. */
+/** Verifies a plaintext password against a stored `scrypt:...` (or legacy `$`) hash. */
 export async function verifyPassword(
   password: string,
   stored: string
 ): Promise<boolean> {
-  const parts = stored.split("$");
+  // Accept both the current `:` delimiter and the legacy `$` delimiter.
+  const parts = stored.split(/[:$]/);
   if (parts.length !== 3 || parts[0] !== "scrypt") return false;
 
   const salt = Buffer.from(parts[1], "hex");
