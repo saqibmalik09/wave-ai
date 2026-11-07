@@ -1,23 +1,27 @@
 /**
- * User store.
+ * User store — the auth data-access layer.
  *
- * NOTE ON SCOPE: this repository is a front-end only Next.js app — there is no
- * database wired up (no `electronicwave` connection, no ORM). To make sign-up
- * and login genuinely work end to end, this provides a small file-backed store
- * at `.data/users.json` (git-ignored). The public surface below
- * (`findUserByEmail`, `createUser`, `getUserById`) is deliberately the same
- * shape a real data-access layer would expose, so swapping this for a Postgres
- * / Prisma repository later is a one-file change with no call-site edits.
+ * This used to be a file-backed JSON store; it is now backed by Postgres via
+ * Prisma. The PUBLIC SURFACE is unchanged on purpose — `findUserByEmail`,
+ * `getUserById` and `createUser` keep the exact same signatures and return
+ * shapes, so every existing caller (login/signup routes, session creation)
+ * works without edits. New capabilities (phone update, status lookups) are
+ * ADDED alongside rather than changing the existing functions.
  *
- * Server-only: uses `node:fs` and `node:crypto`. Never import from the client.
+ * Server-only (uses the Prisma client / query engine). Never import from a
+ * Client Component.
  */
-import { randomUUID } from "node:crypto";
-import { promises as fs } from "node:fs";
-import path from "node:path";
+import { prisma } from "@/lib/db/prisma";
 import { hashPassword } from "./password";
 import { superAdmin } from "./config";
+import { roleFromPrisma } from "./roles";
 import type { Role } from "./types";
 
+/**
+ * The stored user DTO. The original three fields (id/email/name/passwordHash/
+ * role/createdAt) are preserved exactly — `createdAt` stays an ISO string so
+ * callers that serialised it keep working. Phone/status are additive.
+ */
 export type StoredUser = {
   id: string;
   email: string; // always lower-cased
@@ -25,61 +29,74 @@ export type StoredUser = {
   passwordHash: string;
   role: Role;
   createdAt: string;
+  phone: string | null;
+  phoneVerified: boolean;
+  status: "ACTIVE" | "SUSPENDED";
 };
 
-const DATA_DIR = path.join(process.cwd(), ".data");
-const USERS_FILE = path.join(DATA_DIR, "users.json");
-
-/** Serialises writes within this process so concurrent requests don't clobber. */
-let writeChain: Promise<unknown> = Promise.resolve();
-let seeded = false;
-
-async function readAll(): Promise<StoredUser[]> {
-  try {
-    const raw = await fs.readFile(USERS_FILE, "utf8");
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as StoredUser[]) : [];
-  } catch {
-    return [];
-  }
-}
-
-async function writeAll(users: StoredUser[]): Promise<void> {
-  await fs.mkdir(DATA_DIR, { recursive: true });
-  await fs.writeFile(USERS_FILE, JSON.stringify(users, null, 2), "utf8");
-}
-
-function runExclusive<T>(fn: () => Promise<T>): Promise<T> {
-  const next = writeChain.then(fn, fn);
-  // Keep the chain alive but swallow rejections so one failure doesn't poison it.
-  writeChain = next.then(
-    () => undefined,
-    () => undefined
-  );
-  return next;
-}
-
 /**
- * Seeds the super-admin from env (pre-hashed password) once per process, if
- * configured and not already present. No-op when env is unset.
+ * Columns we ever read for a user. Explicit select — never `SELECT *` — so the
+ * query stays cheap and stable as the table grows.
  */
+const userSelect = {
+  id: true,
+  email: true,
+  name: true,
+  passwordHash: true,
+  role: true,
+  status: true,
+  phone: true,
+  phoneVerified: true,
+  createdAt: true,
+} as const;
+
+type UserRow = {
+  id: string;
+  email: string;
+  name: string;
+  passwordHash: string;
+  role: import("@prisma/client").UserRole;
+  status: "ACTIVE" | "SUSPENDED";
+  phone: string | null;
+  phoneVerified: boolean;
+  createdAt: Date;
+};
+
+function toStoredUser(row: UserRow): StoredUser {
+  return {
+    id: row.id,
+    email: row.email,
+    name: row.name,
+    passwordHash: row.passwordHash,
+    role: roleFromPrisma(row.role),
+    createdAt: row.createdAt.toISOString(),
+    phone: row.phone,
+    phoneVerified: row.phoneVerified,
+    status: row.status,
+  };
+}
+
+/** Seeds the super-admin from env once per process, idempotently. No-op when
+ * env is unset. A single existence check + create on first auth call — never a
+ * write on every request. */
+let seeded = false;
 async function ensureSeeded(): Promise<void> {
   if (seeded) return;
   seeded = true;
   if (!superAdmin.email || !superAdmin.passwordHash) return;
 
-  await runExclusive(async () => {
-    const users = await readAll();
-    if (users.some((u) => u.email === superAdmin.email)) return;
-    users.push({
-      id: randomUUID(),
-      email: superAdmin.email!,
-      name: superAdmin.name,
-      passwordHash: superAdmin.passwordHash!,
-      role: "superadmin",
-      createdAt: new Date().toISOString(),
-    });
-    await writeAll(users);
+  // Create only if absent. `createMany({ skipDuplicates })` keeps this safe
+  // under a race between two cold processes (unique email).
+  await prisma.user.createMany({
+    data: [
+      {
+        email: superAdmin.email,
+        name: superAdmin.name,
+        passwordHash: superAdmin.passwordHash,
+        role: "SUPERADMIN",
+      },
+    ],
+    skipDuplicates: true,
   });
 }
 
@@ -88,14 +105,20 @@ export async function findUserByEmail(
 ): Promise<StoredUser | null> {
   await ensureSeeded();
   const normalized = email.trim().toLowerCase();
-  const users = await readAll();
-  return users.find((u) => u.email === normalized) ?? null;
+  const row = await prisma.user.findUnique({
+    where: { email: normalized },
+    select: userSelect,
+  });
+  return row ? toStoredUser(row) : null;
 }
 
 export async function getUserById(id: string): Promise<StoredUser | null> {
   await ensureSeeded();
-  const users = await readAll();
-  return users.find((u) => u.id === id) ?? null;
+  const row = await prisma.user.findUnique({
+    where: { id },
+    select: userSelect,
+  });
+  return row ? toStoredUser(row) : null;
 }
 
 export type CreateUserResult =
@@ -110,23 +133,72 @@ export async function createUser(input: {
 }): Promise<CreateUserResult> {
   await ensureSeeded();
   const email = input.email.trim().toLowerCase();
+
+  // Cheap existence check first; the unique constraint is the real guard and
+  // the catch below handles the race between check and insert.
+  const existing = await prisma.user.findUnique({
+    where: { email },
+    select: { id: true },
+  });
+  if (existing) return { ok: false, reason: "duplicate" };
+
   const passwordHash = await hashPassword(input.password);
 
-  return runExclusive<CreateUserResult>(async () => {
-    const users = await readAll();
-    if (users.some((u) => u.email === email)) {
+  try {
+    const row = await prisma.user.create({
+      data: {
+        email,
+        name: input.name.trim(),
+        passwordHash,
+        role: "USER",
+      },
+      select: userSelect,
+    });
+    return { ok: true, user: toStoredUser(row) };
+  } catch (err) {
+    // P2002 = unique constraint violation (another request won the race).
+    if (
+      typeof err === "object" &&
+      err !== null &&
+      "code" in err &&
+      (err as { code?: string }).code === "P2002"
+    ) {
       return { ok: false, reason: "duplicate" };
     }
-    const user: StoredUser = {
-      id: randomUUID(),
-      email,
-      name: input.name.trim(),
-      passwordHash,
-      role: "user",
-      createdAt: new Date().toISOString(),
-    };
-    users.push(user);
-    await writeAll(users);
-    return { ok: true, user };
-  });
+    throw err;
+  }
+}
+
+export type UpdatePhoneResult =
+  | { ok: true; user: StoredUser }
+  | { ok: false; reason: "not_found" };
+
+/**
+ * Updates a user's phone number. Setting a new number resets `phoneVerified`
+ * to false (the schema is OTP-ready even though no SMS/OTP is wired yet).
+ * Pass `null` to clear the number.
+ */
+export async function updateUserPhone(
+  userId: string,
+  phone: string | null
+): Promise<UpdatePhoneResult> {
+  try {
+    const row = await prisma.user.update({
+      where: { id: userId },
+      data: { phone, phoneVerified: false },
+      select: userSelect,
+    });
+    return { ok: true, user: toStoredUser(row) };
+  } catch (err) {
+    // P2025 = record to update not found.
+    if (
+      typeof err === "object" &&
+      err !== null &&
+      "code" in err &&
+      (err as { code?: string }).code === "P2025"
+    ) {
+      return { ok: false, reason: "not_found" };
+    }
+    throw err;
+  }
 }

@@ -8,10 +8,14 @@ import { cn } from "@/lib/cn";
 export function BrandMark({
   className,
   showName = true,
+  name,
 }: {
   className?: string;
   showName?: boolean;
+  /** Overrides the build-time brand name with the live/editable one. */
+  name?: string;
 }) {
+  const displayName = name ?? brand.name;
   return (
     <span className={cn("inline-flex items-center gap-2", className)}>
       <svg
@@ -33,7 +37,7 @@ export function BrandMark({
       </svg>
       {showName && (
         <span className="text-lg font-extrabold tracking-tight text-heading">
-          {brand.name}
+          {displayName}
         </span>
       )}
     </span>

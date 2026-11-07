@@ -2,7 +2,7 @@
  * Shared auth types. Safe to import from both server and client code
  * (contains only type declarations — no secrets, no Node APIs).
  */
-export type Role = "superadmin" | "user" | "guest";
+export type Role = "superadmin" | "admin" | "user" | "guest";
 
 /** Minimal user shape exposed to the UI (a DTO — never the stored record). */
 export type SessionUser = {

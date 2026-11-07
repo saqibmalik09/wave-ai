@@ -14,7 +14,9 @@ pnpm dev
 bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3005](http://localhost:3005) with your browser to see the result.
+
+The dev server and `next start` both listen on port 3005 over plain HTTP. Next.js reads `-p` / the `PORT` environment variable before `.env` files load, so the port is set on the npm scripts and in `ecosystem.config.js`, not in `.env`.
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 

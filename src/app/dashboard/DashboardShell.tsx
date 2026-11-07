@@ -40,6 +40,12 @@ import { brand } from "@/lib/brand";
 import { cn } from "@/lib/cn";
 import type { SessionUser } from "@/lib/auth/types";
 
+/** The user's current plan/quota, resolved server-side. Null => free default. */
+export type DashboardPlan = {
+  name: string;
+  messageQuota: number;
+};
+
 type NavItem = { label: string; icon: LucideIcon; paid?: boolean };
 
 const NAV_ITEMS: NavItem[] = [
@@ -63,7 +69,9 @@ const QUICK_ACTIONS: QuickAction[] = [
   { label: "Compare", icon: GitCompare },
 ];
 
-const MESSAGE_LIMIT = 10;
+/** Fallback quota / plan name used before a subscription row exists. */
+const DEFAULT_MESSAGE_LIMIT = 10;
+const DEFAULT_PLAN_NAME = "Free Plan";
 const COLLAPSE_KEY = "aw:dashboard:collapsed";
 
 /**
@@ -109,9 +117,19 @@ function useCollapsed(): [boolean, () => void] {
   return [collapsed, toggle];
 }
 
-export function DashboardShell({ user }: { user: SessionUser }) {
+export function DashboardShell({
+  user,
+  appName,
+  plan,
+}: {
+  user: SessionUser;
+  appName: string;
+  plan: DashboardPlan | null;
+}) {
   const router = useRouter();
   const isGuest = user.role === "guest";
+  const planName = plan?.name ?? DEFAULT_PLAN_NAME;
+  const messageQuota = plan?.messageQuota ?? DEFAULT_MESSAGE_LIMIT;
 
   const [collapsed, toggleCollapsed] = useCollapsed();
   const [mobileOpen, setMobileOpen] = useState(false);

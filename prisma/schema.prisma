@@ -1,0 +1,147 @@
+// AiWave data model.
+//
+// Designed for very large user counts: every column used in a WHERE / ORDER BY
+// / JOIN is indexed, lookups are unique where they must be, and lists are meant
+// to be read with cursor pagination (never OFFSET, never SELECT *). Roles and
+// subscription tiers are DATA (rows + enums) — not hardcoded UI branches.
+//
+// Applied in production with `prisma migrate deploy` (never `migrate dev`
+// against the live DB). See prisma/migrations/ for the generated SQL.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// Platform roles. SUPERADMIN is the seeded owner; ADMIN is a delegated
+/// operator; USER is a normal subscriber. Guests are session-only and are
+/// never persisted as rows.
+enum UserRole {
+  USER
+  ADMIN
+  SUPERADMIN
+}
+
+/// Account lifecycle. Suspension is enforced server-side (fail closed).
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+/// Billing cadence for a plan. FREE and promotional plans never charge; the
+/// paid cadences are modelled now but no payment provider is wired yet.
+enum PlanInterval {
+  FREE
+  MONTH
+  YEAR
+  LIFETIME
+}
+
+/// Lifecycle of a user's subscription to a plan.
+enum SubscriptionStatus {
+  ACTIVE
+  EXPIRED
+  CANCELED
+}
+
+model User {
+  id            String       @id @default(cuid())
+  email         String       @unique // always stored lower-cased
+  name          String
+  passwordHash  String
+  phone         String? // nullable; editable now, OTP-ready via phoneVerified
+  phoneVerified Boolean      @default(false)
+  role          UserRole     @default(USER)
+  status        UserStatus   @default(ACTIVE)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  subscriptions Subscription[]
+
+  // email is already unique (indexed). phone is a lookup/filter column.
+  @@index([phone])
+  // common admin listing: newest users first.
+  @@index([createdAt])
+  @@index([role])
+  @@index([status])
+  @@map("users")
+}
+
+model Plan {
+  id           String        @id @default(cuid())
+  code         String        @unique // e.g. "free" / "pro" / "promo"
+  name         String
+  priceCents   Int           @default(0)
+  currency     String        @default("usd")
+  interval     PlanInterval  @default(FREE)
+  messageQuota Int           @default(0)
+  isPromo      Boolean       @default(false)
+  features     Json          @default("{}")
+  active       Boolean       @default(true)
+  createdAt    DateTime      @default(now())
+
+  subscriptions Subscription[]
+  promoCodes    PromoCode[]
+
+  // admin listing filters by active plans, ordered by creation.
+  @@index([active, createdAt])
+  @@map("plans")
+}
+
+model Subscription {
+  id        String             @id @default(cuid())
+  userId    String
+  planId    String
+  status    SubscriptionStatus @default(ACTIVE)
+  isFree    Boolean            @default(false)
+  isPromo   Boolean            @default(false)
+  startAt   DateTime           @default(now())
+  endAt     DateTime? // null = no expiry (free / lifetime)
+  createdAt DateTime           @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan Plan @relation(fields: [planId], references: [id], onDelete: Restrict)
+
+  // "current subscription for this user" is the hot read.
+  @@index([userId, status])
+  @@index([planId])
+  // expiry sweeps (ACTIVE subs past endAt) run on this.
+  @@index([status, endAt])
+  @@map("subscriptions")
+}
+
+/// Optional promo-code redemption model. Ready for a future "redeem code"
+/// flow; not wired to any public endpoint yet.
+model PromoCode {
+  id              String    @id @default(cuid())
+  code            String    @unique
+  planId          String
+  maxRedemptions  Int       @default(0) // 0 = unlimited
+  redeemedCount   Int       @default(0)
+  expiresAt       DateTime?
+  active          Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+
+  plan Plan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@index([active, expiresAt])
+  @@index([planId])
+  @@map("promo_codes")
+}
+
+/// Single-row, admin-editable brand configuration. The app pins this to id = 1
+/// so there is exactly one source of truth for the app name / theme.
+model BrandConfig {
+  id           Int      @id @default(1)
+  appName      String
+  tagline      String
+  logoUrl      String? // optional, self-hosted only (no hotlinked images)
+  primaryColor String   @default("#30a66d")
+  updatedAt    DateTime @updatedAt
+
+  @@map("brand_config")
+}
