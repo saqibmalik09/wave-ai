@@ -394,11 +394,13 @@ function Sidebar({
 function UserMenu({
   user,
   isGuest,
+  planName,
   collapsed,
   router,
 }: {
   user: SessionUser;
   isGuest: boolean;
+  planName: string;
   collapsed: boolean;
   router: ReturnType<typeof useRouter>;
 }) {
@@ -474,7 +476,7 @@ function UserMenu({
             {isGuest ? "Guest" : user.name}
           </span>
           <span className="block truncate text-xs text-muted">
-            {isGuest ? "Not signed in" : "Free"}
+            {isGuest ? "Not signed in" : planName}
           </span>
         </span>
         <ChevronUp
