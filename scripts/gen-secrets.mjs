@@ -70,7 +70,15 @@ async function main() {
     `AUTH_SECRET=${authSecret}\n\n` +
     `SUPERADMIN_EMAIL=${email}\n` +
     `SUPERADMIN_NAME=${name}\n` +
-    `SUPERADMIN_PASSWORD_HASH=${passwordHash}\n`;
+    `SUPERADMIN_PASSWORD_HASH=${passwordHash}\n\n` +
+    // We never invent DB credentials — leave a blank placeholder for the owner
+    // to fill with the real "wave-ai" connection string.
+    "# PostgreSQL connection for the wave-ai database — fill this in yourself.\n" +
+    "#   postgresql://USER:PASSWORD@HOST:5432/wave-ai?schema=public\n" +
+    "# At scale route through a pooler (pgbouncer) — see .env.example.\n" +
+    "DATABASE_URL=\n\n" +
+    "# App / brand name (first-paint fallback; real name lives in BrandConfig).\n" +
+    "APP_NAME=AiWave\n";
 
   writeFileSync(envPath, body, { encoding: "utf8", mode: 0o600 });
 
@@ -79,7 +87,8 @@ async function main() {
   console.log("  Super-admin login (SAVE THIS NOW — shown only once):");
   console.log("    email:    " + email);
   console.log("    password: " + password + "\n");
-  console.log("  The password is stored only as a scrypt hash. Restart the server to pick up .env.local.\n");
+  console.log("  The password is stored only as a scrypt hash. Restart the server to pick up .env.local.");
+  console.log("  NOTE: set DATABASE_URL in .env.local to your wave-ai Postgres before running Prisma.\n");
 }
 
 main().catch((err) => {

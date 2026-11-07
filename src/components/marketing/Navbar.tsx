@@ -6,6 +6,7 @@ import { Menu, X } from "lucide-react";
 import { Container } from "@/components/ui/Container";
 import { ButtonLink } from "@/components/ui/Button";
 import { BrandMark } from "@/components/BrandMark";
+import { brand } from "@/lib/brand";
 
 const navLinks = [
   { label: "Models", href: "#models" },
@@ -14,15 +15,15 @@ const navLinks = [
   { label: "Enterprise", href: "#enterprise" },
 ];
 
-export function Navbar() {
+export function Navbar({ appName = brand.name }: { appName?: string } = {}) {
   const [open, setOpen] = useState(false);
 
   return (
     <header className="sticky top-0 z-50 border-b border-border/70 bg-background/80 backdrop-blur-md">
       <Container>
         <div className="flex h-16 items-center justify-between">
-          <Link href="/" aria-label="AiWave home">
-            <BrandMark />
+          <Link href="/" aria-label={`${appName} home`}>
+            <BrandMark name={appName} />
           </Link>
 
           {/* Desktop nav */}
@@ -43,7 +44,7 @@ export function Navbar() {
               Login
             </ButtonLink>
             <ButtonLink href="/login" size="sm">
-              Start using {""}AiWave
+              Start using {appName}
             </ButtonLink>
           </div>
 
@@ -80,7 +81,7 @@ export function Navbar() {
                   Login
                 </ButtonLink>
                 <ButtonLink href="/login" size="md">
-                  Start using AiWave
+                  Start using {appName}
                 </ButtonLink>
               </div>
             </nav>

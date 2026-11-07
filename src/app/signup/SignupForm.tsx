@@ -31,7 +31,7 @@ const STRENGTH_COLORS = [
   "bg-accent-dark",
 ];
 
-export function SignupForm() {
+export function SignupForm({ appName = brand.name }: { appName?: string } = {}) {
   const router = useRouter();
   const [showPw, setShowPw] = useState(false);
   const [name, setName] = useState("");
@@ -100,11 +100,11 @@ export function SignupForm() {
               "radial-gradient(50% 40% at 30% 10%, rgba(48,166,109,0.35) 0%, transparent 70%)",
           }}
         />
-        <Link href="/" className="relative" aria-label={`${brand.name} home`}>
+        <Link href="/" className="relative" aria-label={`${appName} home`}>
           <span className="inline-flex items-center gap-2 text-primary-foreground">
             <BrandMark showName={false} />
             <span className="text-lg font-extrabold tracking-tight text-white">
-              {brand.name}
+              {appName}
             </span>
           </span>
         </Link>
@@ -130,7 +130,7 @@ export function SignupForm() {
         </div>
 
         <p className="relative text-sm text-white/50">
-          © <CurrentYear /> {brand.name}
+          © <CurrentYear /> {appName}
         </p>
       </aside>
 
@@ -138,7 +138,7 @@ export function SignupForm() {
       <div className="flex flex-1 items-center justify-center px-5 py-10 sm:px-8">
         <div className="w-full max-w-sm">
           <div className="lg:hidden">
-            <Link href="/" aria-label={`${brand.name} home`}>
+            <Link href="/" aria-label={`${appName} home`}>
               <BrandMark />
             </Link>
           </div>
@@ -147,7 +147,7 @@ export function SignupForm() {
             Create your account
           </h1>
           <p className="mt-2 text-sm text-muted">
-            Start using {brand.name} in minutes.
+            Start using {appName} in minutes.
           </p>
 
           <button

@@ -10,11 +10,13 @@ import { Testimonials } from "@/components/marketing/Testimonials";
 import { Faq } from "@/components/marketing/Faq";
 import { Enterprise } from "@/components/marketing/Enterprise";
 import { Footer } from "@/components/marketing/Footer";
+import { getBrand } from "@/lib/brand.server";
 
-export default function Home() {
+export default async function Home() {
+  const { appName } = await getBrand();
   return (
     <>
-      <Navbar />
+      <Navbar appName={appName} />
       <main className="flex-1">
         <Hero />
         <ModelsStrip />

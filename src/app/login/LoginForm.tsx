@@ -12,7 +12,7 @@ import { brand } from "@/lib/brand";
 import { guestRequest, loginRequest, safeNext } from "@/lib/auth/client";
 import { isValidEmail } from "@/lib/auth/validation";
 
-export function LoginForm() {
+export function LoginForm({ appName = brand.name }: { appName?: string } = {}) {
   const router = useRouter();
   const [showPw, setShowPw] = useState(false);
   const [email, setEmail] = useState("");
@@ -78,11 +78,11 @@ export function LoginForm() {
               "radial-gradient(50% 40% at 30% 10%, rgba(48,166,109,0.35) 0%, transparent 70%)",
           }}
         />
-        <Link href="/" className="relative" aria-label={`${brand.name} home`}>
+        <Link href="/" className="relative" aria-label={`${appName} home`}>
           <span className="inline-flex items-center gap-2 text-primary-foreground">
             <BrandMark showName={false} />
             <span className="text-lg font-extrabold tracking-tight text-white">
-              {brand.name}
+              {appName}
             </span>
           </span>
         </Link>
@@ -108,7 +108,7 @@ export function LoginForm() {
         </div>
 
         <p className="relative text-sm text-white/50">
-          © <CurrentYear /> {brand.name}
+          © <CurrentYear /> {appName}
         </p>
       </aside>
 
@@ -116,7 +116,7 @@ export function LoginForm() {
       <div className="flex flex-1 items-center justify-center px-5 py-10 sm:px-8">
         <div className="w-full max-w-sm">
           <div className="lg:hidden">
-            <Link href="/" aria-label={`${brand.name} home`}>
+            <Link href="/" aria-label={`${appName} home`}>
               <BrandMark />
             </Link>
           </div>
@@ -125,7 +125,7 @@ export function LoginForm() {
             Welcome back
           </h1>
           <p className="mt-2 text-sm text-muted">
-            Log in to continue to {brand.name}.
+            Log in to continue to {appName}.
           </p>
 
           {/* Google login (configured from the dashboard; informs the user when not) */}
@@ -245,7 +245,7 @@ export function LoginForm() {
           </button>
 
           <p className="mt-6 text-center text-sm text-muted">
-            New to {brand.name}?{" "}
+            New to {appName}?{" "}
             <Link
               href="/signup"
               className="font-semibold text-accent-dark hover:underline"

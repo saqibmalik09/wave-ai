@@ -2,7 +2,9 @@ import { Suspense } from "react";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/dal";
-import { DashboardShell } from "./DashboardShell";
+import { getBrand } from "@/lib/brand.server";
+import { getCurrentSubscription } from "@/lib/db/subscriptions";
+import { DashboardShell, type DashboardPlan } from "./DashboardShell";
 
 export const metadata: Metadata = {
   title: "Dashboard",
@@ -25,7 +27,19 @@ async function DashboardEntry() {
   // Authoritative guard (Proxy is only an optimistic pre-check). Guests have a
   // valid session too, so they pass here and reach the dashboard.
   if (!user) redirect("/login");
-  return <DashboardShell user={user} />;
+
+  const { appName } = await getBrand();
+
+  // Guests have no DB row, so no subscription — fall back to the free defaults.
+  let plan: DashboardPlan | null = null;
+  if (user.role !== "guest" && user.email !== null) {
+    const sub = await getCurrentSubscription(user.id);
+    if (sub) {
+      plan = { name: sub.plan.name, messageQuota: sub.plan.messageQuota };
+    }
+  }
+
+  return <DashboardShell user={user} appName={appName} plan={plan} />;
 }
 
 function DashboardSkeleton() {

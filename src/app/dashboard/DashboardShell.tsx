@@ -36,7 +36,6 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { BrandMark } from "@/components/BrandMark";
-import { brand } from "@/lib/brand";
 import { cn } from "@/lib/cn";
 import type { SessionUser } from "@/lib/auth/types";
 
@@ -547,7 +546,7 @@ function firstName(name: string): string {
   return trimmed.split(/\s+/)[0];
 }
 
-function promptPlaceholder(active: string): string {
+function promptPlaceholder(active: string, appName: string): string {
   switch (active) {
     case "Image Studio":
     case "Images":
@@ -562,6 +561,6 @@ function promptPlaceholder(active: string): string {
     case "Compare":
       return "Ask something to compare across models…";
     default:
-      return `Message ${brand.name}…`;
+      return `Message ${appName}…`;
   }
 }
