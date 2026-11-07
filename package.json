@@ -10,7 +10,8 @@
     "postinstall": "prisma generate",
     "prisma:generate": "prisma generate",
     "db:migrate:deploy": "prisma migrate deploy",
-    "db:seed": "prisma db seed"
+    "db:seed": "prisma db seed",
+    "deploy": "bash scripts/deploy.sh"
   },
   "prisma": {
     "seed": "node --experimental-strip-types prisma/seed.ts"
