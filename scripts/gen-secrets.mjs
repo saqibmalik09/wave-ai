@@ -73,9 +73,9 @@ async function main() {
     `SUPERADMIN_PASSWORD_HASH=${passwordHash}\n\n` +
     // We never invent DB credentials — leave a blank placeholder for the owner
     // to fill with the real "wave-ai" connection string.
-    "# PostgreSQL connection for the wave-ai database — fill this in yourself.\n" +
-    "#   postgresql://USER:PASSWORD@HOST:5432/wave-ai?schema=public\n" +
-    "# At scale route through a pooler (pgbouncer) — see .env.example.\n" +
+    "# MySQL connection for the wave-ai database — fill this in yourself.\n" +
+    "#   mysql://USER:PASSWORD@HOST:3306/wave-ai\n" +
+    "# At scale route through a pooler — see .env.example.\n" +
     "DATABASE_URL=\n\n" +
     "# App / brand name (first-paint fallback; real name lives in BrandConfig).\n" +
     "APP_NAME=AiWave\n";
@@ -88,7 +88,7 @@ async function main() {
   console.log("    email:    " + email);
   console.log("    password: " + password + "\n");
   console.log("  The password is stored only as a scrypt hash. Restart the server to pick up .env.local.");
-  console.log("  NOTE: set DATABASE_URL in .env.local to your wave-ai Postgres before running Prisma.\n");
+  console.log("  NOTE: set DATABASE_URL in .env.local to your wave-ai MySQL (port 3306) before running Prisma.\n");
 }
 
 main().catch((err) => {
