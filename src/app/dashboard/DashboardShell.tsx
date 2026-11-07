@@ -359,10 +359,10 @@ function Sidebar({
           <div className="rounded-2xl border border-border bg-surface-muted p-3.5">
             <div className="flex items-center gap-2 text-sm font-semibold text-heading">
               <Crown size={15} className="text-accent" />
-              Free Plan
+              {planName}
             </div>
             <p className="mt-1 text-xs text-muted">
-              0 out of {MESSAGE_LIMIT} messages used
+              0 out of {messageQuota} messages used
             </p>
             <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-border">
               <div className="h-full w-0 rounded-full bg-accent" />
@@ -383,6 +383,7 @@ function Sidebar({
       <UserMenu
         user={user}
         isGuest={isGuest}
+        planName={planName}
         collapsed={collapsed}
         router={router}
       />
