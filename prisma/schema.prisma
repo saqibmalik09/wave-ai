@@ -52,7 +52,10 @@ model User {
   id            String       @id @default(cuid())
   email         String       @unique // always stored lower-cased
   name          String
-  passwordHash  String       @db.VarChar(512) // scrypt:<salt>:<hash> (~168 chars; room for upgrades)
+  /// Null for Google-only accounts (no local password). Email/password users always have a hash.
+  passwordHash  String?      @db.VarChar(512)
+  /// Google subject (`sub`). Unique when set; null for email/password-only users.
+  googleId      String?      @unique
   phone         String? // nullable; editable now, OTP-ready via phoneVerified
   phoneVerified Boolean      @default(false)
   role          UserRole     @default(USER)

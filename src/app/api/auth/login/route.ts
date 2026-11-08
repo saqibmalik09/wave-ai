@@ -26,15 +26,31 @@ export async function POST(request: Request) {
   }
 
   const user = await findUserByEmail(email);
+
+  if (user && !user.passwordHash) {
+    return NextResponse.json(
+      { error: "This account uses Google sign-in. Continue with Google." },
+      { status: 401 }
+    );
+  }
+
   // Verify even when the user is missing to keep timing roughly constant.
-  const passwordOk = user
-    ? await verifyPassword(password, user.passwordHash)
-    : false;
+  const passwordOk =
+    user && user.passwordHash
+      ? await verifyPassword(password, user.passwordHash)
+      : false;
 
   if (!user || !passwordOk) {
     return NextResponse.json(
       { error: "Incorrect email or password." },
       { status: 401 }
+    );
+  }
+
+  if (user.status === "SUSPENDED") {
+    return NextResponse.json(
+      { error: "This account has been suspended." },
+      { status: 403 }
     );
   }
 

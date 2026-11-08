@@ -26,7 +26,9 @@ export type StoredUser = {
   id: string;
   email: string; // always lower-cased
   name: string;
-  passwordHash: string;
+  /** Null for Google-only accounts. */
+  passwordHash: string | null;
+  googleId: string | null;
   role: Role;
   createdAt: string;
   phone: string | null;
@@ -43,6 +45,7 @@ const userSelect = {
   email: true,
   name: true,
   passwordHash: true,
+  googleId: true,
   role: true,
   status: true,
   phone: true,
@@ -54,7 +57,8 @@ type UserRow = {
   id: string;
   email: string;
   name: string;
-  passwordHash: string;
+  passwordHash: string | null;
+  googleId: string | null;
   role: import("@prisma/client").UserRole;
   status: "ACTIVE" | "SUSPENDED";
   phone: string | null;
@@ -68,6 +72,7 @@ function toStoredUser(row: UserRow): StoredUser {
     email: row.email,
     name: row.name,
     passwordHash: row.passwordHash,
+    googleId: row.googleId,
     role: roleFromPrisma(row.role),
     createdAt: row.createdAt.toISOString(),
     phone: row.phone,
@@ -167,6 +172,68 @@ export async function createUser(input: {
     }
     throw err;
   }
+}
+
+/**
+ * Find-or-create a user from a verified Google profile.
+ * - Match by googleId first, then by email.
+ * - Links googleId onto an existing email/password account without wiping the password.
+ * - Creates a Google-only account (passwordHash null) when new.
+ */
+export async function upsertGoogleUser(input: {
+  googleId: string;
+  email: string;
+  name: string;
+}): Promise<StoredUser> {
+  await ensureSeeded();
+  const email = input.email.trim().toLowerCase();
+  const googleId = input.googleId.trim();
+  const name = input.name.trim() || email.split("@")[0] || "User";
+
+  const byGoogle = await prisma.user.findUnique({
+    where: { googleId },
+    select: userSelect,
+  });
+  if (byGoogle) {
+    if (byGoogle.name !== name) {
+      const updated = await prisma.user.update({
+        where: { id: byGoogle.id },
+        data: { name },
+        select: userSelect,
+      });
+      return toStoredUser(updated);
+    }
+    return toStoredUser(byGoogle);
+  }
+
+  const byEmail = await prisma.user.findUnique({
+    where: { email },
+    select: userSelect,
+  });
+  if (byEmail) {
+    const updated = await prisma.user.update({
+      where: { id: byEmail.id },
+      data: {
+        googleId,
+        // Keep existing name if set; fill only when blank-ish.
+        name: byEmail.name?.trim() ? byEmail.name : name,
+      },
+      select: userSelect,
+    });
+    return toStoredUser(updated);
+  }
+
+  const created = await prisma.user.create({
+    data: {
+      email,
+      name,
+      googleId,
+      passwordHash: null,
+      role: "USER",
+    },
+    select: userSelect,
+  });
+  return toStoredUser(created);
 }
 
 export type UpdatePhoneResult =

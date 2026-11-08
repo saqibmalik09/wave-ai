@@ -3,6 +3,7 @@
  * Server-only (uses `next/headers`). Used by Route Handlers.
  */
 import { cookies } from "next/headers";
+import type { NextResponse } from "next/server";
 import {
   AUTH_COOKIE,
   GUEST_TTL_SEC,
@@ -12,15 +13,15 @@ import {
 import { signToken } from "./token";
 import type { SessionUser } from "./types";
 
-/** Creates a session for the given user and writes the cookie. */
-export async function createSession(
+type SessionOptions = { guest?: boolean };
+
+async function buildSessionCookie(
   user: SessionUser,
-  options: { guest?: boolean } = {}
-): Promise<void> {
+  options: SessionOptions = {}
+): Promise<{ token: string; ttl: number }> {
   const guest = options.guest ?? false;
   const ttl = guest ? GUEST_TTL_SEC : SESSION_TTL_SEC;
   const now = Math.floor(Date.now() / 1000);
-
   const token = await signToken(
     {
       sub: user.id,
@@ -33,15 +34,40 @@ export async function createSession(
     },
     getAuthSecret()
   );
+  return { token, ttl };
+}
 
-  const store = await cookies();
-  store.set(AUTH_COOKIE, token, {
+function cookieOptions(ttl: number) {
+  return {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
+    sameSite: "lax" as const,
     path: "/",
     maxAge: ttl,
-  });
+  };
+}
+
+/** Creates a session for the given user and writes the cookie via next/headers. */
+export async function createSession(
+  user: SessionUser,
+  options: SessionOptions = {}
+): Promise<void> {
+  const { token, ttl } = await buildSessionCookie(user, options);
+  const store = await cookies();
+  store.set(AUTH_COOKIE, token, cookieOptions(ttl));
+}
+
+/**
+ * Same as createSession, but sets the cookie on an explicit NextResponse
+ * (needed for OAuth redirect responses so the Set-Cookie survives the 302).
+ */
+export async function attachSession(
+  response: NextResponse,
+  user: SessionUser,
+  options: SessionOptions = {}
+): Promise<void> {
+  const { token, ttl } = await buildSessionCookie(user, options);
+  response.cookies.set(AUTH_COOKIE, token, cookieOptions(ttl));
 }
 
 /** Clears the session cookie (logout). */

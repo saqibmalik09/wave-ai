@@ -19,21 +19,27 @@ export async function proxy(request: NextRequest) {
   // session) instead of throwing for every request.
   const secret = process.env.AUTH_SECRET;
   const session = secret ? await verifyToken(token, secret) : null;
+  // Guests are no longer allowed — treat a guest cookie as logged-out.
+  const authed = session && !session.guest ? session : null;
 
   const isProtected = PROTECTED_PREFIXES.some(
     (p) => pathname === p || pathname.startsWith(`${p}/`)
   );
   const isAuthPage = AUTH_PAGES.includes(pathname);
 
-  if (isProtected && !session) {
+  if (isProtected && !authed) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.search = "";
     url.searchParams.set("next", pathname);
-    return NextResponse.redirect(url);
+    const res = NextResponse.redirect(url);
+    if (session?.guest) {
+      res.cookies.delete(AUTH_COOKIE);
+    }
+    return res;
   }
 
-  if (isAuthPage && session) {
+  if (isAuthPage && authed) {
     const url = request.nextUrl.clone();
     url.pathname = "/dashboard";
     url.search = "";

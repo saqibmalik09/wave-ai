@@ -1,16 +1,24 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
-import { Eye, EyeOff, Loader2, Check, UserRound, AlertCircle } from "lucide-react";
+import { Eye, EyeOff, Loader2, Check, AlertCircle } from "lucide-react";
 import { BrandMark } from "@/components/BrandMark";
 import { GoogleIcon } from "@/components/GoogleIcon";
 import { CurrentYear } from "@/components/CurrentYear";
 import { brand } from "@/lib/brand";
-import { guestRequest, loginRequest, safeNext } from "@/lib/auth/client";
+import { loginRequest, safeNext } from "@/lib/auth/client";
 import { isValidEmail } from "@/lib/auth/validation";
+
+const GOOGLE_ERRORS: Record<string, string> = {
+  google_not_configured: "Google sign-in isn’t configured on the server.",
+  google_denied: "Google sign-in was cancelled.",
+  google_state: "Google sign-in expired. Please try again.",
+  google_failed: "Google sign-in failed. Please try again.",
+  google_email_unverified: "Verify your Google email, then try again.",
+  account_suspended: "This account has been suspended.",
+};
 
 export function LoginForm({ appName = brand.name }: { appName?: string } = {}) {
   const router = useRouter();
@@ -18,10 +26,19 @@ export function LoginForm({ appName = brand.name }: { appName?: string } = {}) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const [guestLoading, setGuestLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const busy = loading || guestLoading;
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("error");
+    if (code && GOOGLE_ERRORS[code]) {
+      setError(GOOGLE_ERRORS[code]);
+      const url = new URL(window.location.href);
+      url.searchParams.delete("error");
+      window.history.replaceState({}, "", url.pathname + url.search);
+    }
+  }, []);
 
   function destination(): string {
     if (typeof window === "undefined") return "/dashboard";
@@ -53,22 +70,8 @@ export function LoginForm({ appName = brand.name }: { appName?: string } = {}) {
     router.refresh();
   }
 
-  async function onGuest() {
-    setError(null);
-    setGuestLoading(true);
-    const result = await guestRequest();
-    if (!result.ok) {
-      setError(result.error);
-      setGuestLoading(false);
-      return;
-    }
-    router.push("/dashboard");
-    router.refresh();
-  }
-
   return (
     <main className="flex min-h-screen flex-col lg:flex-row">
-      {/* Brand panel (hidden on small screens) */}
       <aside className="relative hidden overflow-hidden bg-primary lg:flex lg:w-1/2 lg:flex-col lg:justify-between lg:p-12">
         <div
           aria-hidden
@@ -112,7 +115,6 @@ export function LoginForm({ appName = brand.name }: { appName?: string } = {}) {
         </p>
       </aside>
 
-      {/* Form panel */}
       <div className="flex flex-1 items-center justify-center px-5 py-10 sm:px-8">
         <div className="w-full max-w-sm">
           <div className="lg:hidden">
@@ -128,20 +130,13 @@ export function LoginForm({ appName = brand.name }: { appName?: string } = {}) {
             Log in to continue to {appName}.
           </p>
 
-          {/* Google login (configured from the dashboard; informs the user when not) */}
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() =>
-              toast.info("Google sign-in isn’t configured yet.", {
-                description: "Use email and password, or continue as a guest.",
-              })
-            }
-            className="mt-7 flex h-11 w-full items-center justify-center gap-3 rounded-full border border-border-strong bg-surface text-[15px] font-semibold text-foreground transition-colors hover:bg-surface-muted disabled:opacity-60"
+          <a
+            href="/api/auth/google"
+            className="mt-7 flex h-11 w-full items-center justify-center gap-3 rounded-full border border-border-strong bg-surface text-[15px] font-semibold text-foreground transition-colors hover:bg-surface-muted"
           >
             <GoogleIcon />
             Continue with Google
-          </button>
+          </a>
 
           <div className="my-6 flex items-center gap-4">
             <span className="h-px flex-1 bg-border" />
@@ -173,7 +168,7 @@ export function LoginForm({ appName = brand.name }: { appName?: string } = {}) {
                 required
                 autoComplete="email"
                 value={email}
-                disabled={busy}
+                disabled={loading}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@example.com"
                 className="h-11 w-full rounded-xl border border-border bg-surface px-4 text-[15px] text-foreground outline-none transition-shadow placeholder:text-muted/70 focus:border-accent focus:ring-2 focus:ring-accent/25 disabled:opacity-60"
@@ -202,7 +197,7 @@ export function LoginForm({ appName = brand.name }: { appName?: string } = {}) {
                   required
                   autoComplete="current-password"
                   value={password}
-                  disabled={busy}
+                  disabled={loading}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
                   className="h-11 w-full rounded-xl border border-border bg-surface px-4 pr-11 text-[15px] text-foreground outline-none transition-shadow placeholder:text-muted/70 focus:border-accent focus:ring-2 focus:ring-accent/25 disabled:opacity-60"
@@ -220,29 +215,12 @@ export function LoginForm({ appName = brand.name }: { appName?: string } = {}) {
 
             <button
               type="submit"
-              disabled={busy}
+              disabled={loading}
               className="flex h-11 w-full items-center justify-center gap-2 rounded-full bg-primary text-[15px] font-semibold text-primary-foreground transition-all hover:bg-black active:scale-[0.99] disabled:opacity-60"
             >
               {loading ? <Loader2 size={18} className="animate-spin" /> : "Log in"}
             </button>
           </form>
-
-          {/* Guest login */}
-          <button
-            type="button"
-            onClick={onGuest}
-            disabled={busy}
-            className="mt-3 flex h-11 w-full items-center justify-center gap-2 rounded-full border border-border-strong bg-surface text-[15px] font-semibold text-foreground transition-colors hover:bg-surface-muted disabled:opacity-60"
-          >
-            {guestLoading ? (
-              <Loader2 size={18} className="animate-spin" />
-            ) : (
-              <>
-                <UserRound size={17} />
-                Continue as guest
-              </>
-            )}
-          </button>
 
           <p className="mt-6 text-center text-sm text-muted">
             New to {appName}?{" "}

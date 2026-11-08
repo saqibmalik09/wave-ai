@@ -22,7 +22,8 @@ import type { SessionUser } from "./types";
 export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
   const token = (await cookies()).get(AUTH_COOKIE)?.value;
   const payload = await verifyToken(token, getAuthSecret());
-  if (!payload) return null;
+  // Guest sessions are disabled — only registered accounts.
+  if (!payload || payload.guest || payload.role === "guest") return null;
   return {
     id: payload.sub,
     email: payload.email,

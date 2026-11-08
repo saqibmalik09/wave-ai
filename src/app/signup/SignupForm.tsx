@@ -4,19 +4,12 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import {
-  Eye,
-  EyeOff,
-  Loader2,
-  Check,
-  UserRound,
-  AlertCircle,
-} from "lucide-react";
+import { Eye, EyeOff, Loader2, Check, AlertCircle } from "lucide-react";
 import { BrandMark } from "@/components/BrandMark";
 import { GoogleIcon } from "@/components/GoogleIcon";
 import { CurrentYear } from "@/components/CurrentYear";
 import { brand } from "@/lib/brand";
-import { guestRequest, signupRequest } from "@/lib/auth/client";
+import { signupRequest } from "@/lib/auth/client";
 import {
   isValidEmail,
   passwordIssues,
@@ -39,10 +32,8 @@ export function SignupForm({ appName = brand.name }: { appName?: string } = {}) 
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [loading, setLoading] = useState(false);
-  const [guestLoading, setGuestLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const busy = loading || guestLoading;
   const score = useMemo(() => passwordScore(password), [password]);
   const issues = useMemo(() => passwordIssues(password), [password]);
 
@@ -71,19 +62,6 @@ export function SignupForm({ appName = brand.name }: { appName?: string } = {}) 
       return;
     }
     toast.success("Account created. Welcome!");
-    router.push("/dashboard");
-    router.refresh();
-  }
-
-  async function onGuest() {
-    setError(null);
-    setGuestLoading(true);
-    const result = await guestRequest();
-    if (!result.ok) {
-      setError(result.error);
-      setGuestLoading(false);
-      return;
-    }
     router.push("/dashboard");
     router.refresh();
   }
@@ -150,19 +128,13 @@ export function SignupForm({ appName = brand.name }: { appName?: string } = {}) 
             Start using {appName} in minutes.
           </p>
 
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() =>
-              toast.info("Google sign-up isn’t configured yet.", {
-                description: "Use email and password, or continue as a guest.",
-              })
-            }
-            className="mt-7 flex h-11 w-full items-center justify-center gap-3 rounded-full border border-border-strong bg-surface text-[15px] font-semibold text-foreground transition-colors hover:bg-surface-muted disabled:opacity-60"
+          <a
+            href="/api/auth/google"
+            className="mt-7 flex h-11 w-full items-center justify-center gap-3 rounded-full border border-border-strong bg-surface text-[15px] font-semibold text-foreground transition-colors hover:bg-surface-muted"
           >
             <GoogleIcon />
             Sign up with Google
-          </button>
+          </a>
 
           <div className="my-6 flex items-center gap-4">
             <span className="h-px flex-1 bg-border" />
@@ -193,7 +165,7 @@ export function SignupForm({ appName = brand.name }: { appName?: string } = {}) 
                 type="text"
                 autoComplete="name"
                 value={name}
-                disabled={busy}
+                disabled={loading}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Your name"
                 className="h-11 w-full rounded-xl border border-border bg-surface px-4 text-[15px] text-foreground outline-none transition-shadow placeholder:text-muted/70 focus:border-accent focus:ring-2 focus:ring-accent/25 disabled:opacity-60"
@@ -213,7 +185,7 @@ export function SignupForm({ appName = brand.name }: { appName?: string } = {}) 
                 required
                 autoComplete="email"
                 value={email}
-                disabled={busy}
+                disabled={loading}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@example.com"
                 className="h-11 w-full rounded-xl border border-border bg-surface px-4 text-[15px] text-foreground outline-none transition-shadow placeholder:text-muted/70 focus:border-accent focus:ring-2 focus:ring-accent/25 disabled:opacity-60"
@@ -234,7 +206,7 @@ export function SignupForm({ appName = brand.name }: { appName?: string } = {}) 
                   required
                   autoComplete="new-password"
                   value={password}
-                  disabled={busy}
+                  disabled={loading}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="At least 8 characters"
                   className="h-11 w-full rounded-xl border border-border bg-surface px-4 pr-11 text-[15px] text-foreground outline-none transition-shadow placeholder:text-muted/70 focus:border-accent focus:ring-2 focus:ring-accent/25 disabled:opacity-60"
@@ -286,7 +258,7 @@ export function SignupForm({ appName = brand.name }: { appName?: string } = {}) 
                 required
                 autoComplete="new-password"
                 value={confirm}
-                disabled={busy}
+                disabled={loading}
                 onChange={(e) => setConfirm(e.target.value)}
                 placeholder="Re-enter your password"
                 className="h-11 w-full rounded-xl border border-border bg-surface px-4 text-[15px] text-foreground outline-none transition-shadow placeholder:text-muted/70 focus:border-accent focus:ring-2 focus:ring-accent/25 disabled:opacity-60"
@@ -300,7 +272,7 @@ export function SignupForm({ appName = brand.name }: { appName?: string } = {}) 
 
             <button
               type="submit"
-              disabled={busy}
+              disabled={loading}
               className="flex h-11 w-full items-center justify-center gap-2 rounded-full bg-primary text-[15px] font-semibold text-primary-foreground transition-all hover:bg-black active:scale-[0.99] disabled:opacity-60"
             >
               {loading ? (
@@ -310,22 +282,6 @@ export function SignupForm({ appName = brand.name }: { appName?: string } = {}) 
               )}
             </button>
           </form>
-
-          <button
-            type="button"
-            onClick={onGuest}
-            disabled={busy}
-            className="mt-3 flex h-11 w-full items-center justify-center gap-2 rounded-full border border-border-strong bg-surface text-[15px] font-semibold text-foreground transition-colors hover:bg-surface-muted disabled:opacity-60"
-          >
-            {guestLoading ? (
-              <Loader2 size={18} className="animate-spin" />
-            ) : (
-              <>
-                <UserRound size={17} />
-                Continue as guest
-              </>
-            )}
-          </button>
 
           <p className="mt-6 text-center text-sm text-muted">
             Already have an account?{" "}

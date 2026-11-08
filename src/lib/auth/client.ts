@@ -43,10 +43,6 @@ export function signupRequest(name: string, email: string, password: string) {
   return postJson("/api/auth/signup", { name, email, password });
 }
 
-export function guestRequest() {
-  return postJson("/api/auth/guest");
-}
-
 /** Safe-destination helper: only allow same-origin relative paths. */
 export function safeNext(next: string | null | undefined): string {
   if (next && next.startsWith("/") && !next.startsWith("//")) return next;
