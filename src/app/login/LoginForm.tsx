@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff, Loader2, Check, AlertCircle } from "lucide-react";
@@ -20,6 +20,12 @@ const GOOGLE_ERRORS: Record<string, string> = {
   account_suspended: "This account has been suspended.",
 };
 
+function readOauthError(): string | null {
+  if (typeof window === "undefined") return null;
+  const code = new URLSearchParams(window.location.search).get("error");
+  return code && GOOGLE_ERRORS[code] ? GOOGLE_ERRORS[code] : null;
+}
+
 export function LoginForm({ appName = brand.name }: { appName?: string } = {}) {
   const router = useRouter();
   const [showPw, setShowPw] = useState(false);
@@ -27,17 +33,22 @@ export function LoginForm({ appName = brand.name }: { appName?: string } = {}) {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // OAuth callback errors arrive as ?error=… — read via external store so we
+  // never setState inside an effect (react-hooks/set-state-in-effect).
+  const oauthError = useSyncExternalStore(
+    () => () => {},
+    readOauthError,
+    () => null
+  );
+  const displayError = error ?? oauthError;
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
-    const code = params.get("error");
-    if (code && GOOGLE_ERRORS[code]) {
-      setError(GOOGLE_ERRORS[code]);
-      const url = new URL(window.location.href);
-      url.searchParams.delete("error");
-      window.history.replaceState({}, "", url.pathname + url.search);
-    }
+    if (!params.has("error")) return;
+    const url = new URL(window.location.href);
+    url.searchParams.delete("error");
+    window.history.replaceState({}, "", url.pathname + url.search);
   }, []);
 
   function destination(): string {
@@ -144,13 +155,13 @@ export function LoginForm({ appName = brand.name }: { appName?: string } = {}) {
             <span className="h-px flex-1 bg-border" />
           </div>
 
-          {error && (
+          {displayError && (
             <div
               role="alert"
               className="mb-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3.5 py-3 text-sm text-red-700"
             >
               <AlertCircle size={16} className="mt-0.5 shrink-0" />
-              <span>{error}</span>
+              <span>{displayError}</span>
             </div>
           )}
 

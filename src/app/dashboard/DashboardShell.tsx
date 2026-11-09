@@ -3,41 +3,33 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   useSyncExternalStore,
 } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
-  ArrowUp,
-  Clapperboard,
   ChevronUp,
   Crown,
-  Folder,
-  GitCompare,
-  Globe,
-  Image as ImageIcon,
-  Library,
   LogOut,
   Menu,
-  Mic,
   PanelLeftClose,
   PanelLeftOpen,
-  Plus,
-  Presentation,
   Search,
   Settings,
-  SquarePen,
   UserRound,
-  Users,
   X,
-  type LucideIcon,
 } from "lucide-react";
-import { toast } from "sonner";
+import { Toaster, toast } from "sonner";
 import { BrandMark } from "@/components/BrandMark";
 import { cn } from "@/lib/cn";
+import type { WalletDTO } from "@/lib/ai/types";
 import type { SessionUser } from "@/lib/auth/types";
+import { ChromeProvider, type DashboardChrome } from "./chrome-context";
+import { NAV_ITEMS } from "./nav";
+import { useWallet } from "./useWallet";
 
 /** The user's current plan/quota, resolved server-side. Null => free default. */
 export type DashboardPlan = {
@@ -45,33 +37,12 @@ export type DashboardPlan = {
   messageQuota: number;
 };
 
-type NavItem = { label: string; icon: LucideIcon; paid?: boolean };
-
-const NAV_ITEMS: NavItem[] = [
-  { label: "New Chat", icon: SquarePen },
-  { label: "Image Studio", icon: ImageIcon },
-  { label: "Video Studio", icon: Clapperboard, paid: true },
-  { label: "Slides", icon: Presentation },
-  { label: "Websites", icon: Globe },
-  { label: "Experts", icon: Users },
-  { label: "Projects", icon: Folder },
-  { label: "Library", icon: Library },
-];
-
-type QuickAction = { label: string; icon: LucideIcon; paid?: boolean };
-
-const QUICK_ACTIONS: QuickAction[] = [
-  { label: "Websites", icon: Globe },
-  { label: "Videos", icon: Clapperboard, paid: true },
-  { label: "Slides", icon: Presentation },
-  { label: "Images", icon: ImageIcon },
-  { label: "Compare", icon: GitCompare },
-];
-
-/** Fallback quota / plan name used before a subscription row exists. */
-const DEFAULT_MESSAGE_LIMIT = 10;
+/** Fallback plan name used before a subscription row exists. */
 const DEFAULT_PLAN_NAME = "Free Plan";
 const COLLAPSE_KEY = "aw:dashboard:collapsed";
+
+/** Where the local-state nav tabs live; selecting one returns to it. */
+const CHAT_HREF = "/dashboard";
 
 /**
  * Sidebar collapse preference, persisted in localStorage and read via
@@ -116,126 +87,142 @@ function useCollapsed(): [boolean, () => void] {
   return [collapsed, toggle];
 }
 
+/**
+ * Persistent dashboard chrome: sidebar, mobile drawer, user menu and the one
+ * wallet. Rendered by the layout so every dashboard route sits inside it.
+ */
 export function DashboardShell({
   user,
   appName,
   plan,
+  initialWallet = null,
+  children,
 }: {
   user: SessionUser;
   appName: string;
   plan: DashboardPlan | null;
+  /** Balance resolved server-side so the sidebar's first paint isn't empty. */
+  initialWallet?: WalletDTO | null;
+  children: React.ReactNode;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
   const isGuest = user.role === "guest";
   const planName = plan?.name ?? DEFAULT_PLAN_NAME;
-  const messageQuota = plan?.messageQuota ?? DEFAULT_MESSAGE_LIMIT;
+  const {
+    wallet,
+    loading: walletLoading,
+    apply: applyWallet,
+    refresh: refreshWallet,
+  } = useWallet(initialWallet);
 
   const [collapsed, toggleCollapsed] = useCollapsed();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [active, setActive] = useState("New Chat");
-  const [prompt, setPrompt] = useState("");
+  const [tab, setTab] = useState("New Chat");
 
-  function handleSelect(label: string, paid?: boolean) {
-    setActive(label);
-    setMobileOpen(false);
-    if (paid) {
-      toast.info(`${label} is a paid feature.`, {
-        description: isGuest
-          ? "Create an account and upgrade to generate video."
-          : "Upgrade your plan to unlock video generation.",
-      });
-    }
-  }
+  // A routed surface owns the highlight; otherwise it's the local tab.
+  const routeLabel =
+    NAV_ITEMS.find((item) => item.href && item.href === pathname)?.label ??
+    null;
+  const active = routeLabel ?? tab;
+
+  const closeMobile = useCallback(() => setMobileOpen(false), []);
+
+  const select = useCallback(
+    (label: string, paid?: boolean) => {
+      setTab(label);
+      setMobileOpen(false);
+      // These tabs have no route of their own — they live on the chat surface,
+      // so a selection made from a routed page goes back to it.
+      if (routeLabel) router.push(CHAT_HREF);
+      if (paid) {
+        toast.info(`${label} is a paid feature.`, {
+          description: isGuest
+            ? "Create an account and upgrade to generate video."
+            : "Upgrade your plan to unlock video generation.",
+        });
+      }
+    },
+    [isGuest, routeLabel, router]
+  );
+
+  const chrome = useMemo<DashboardChrome>(
+    () => ({
+      user,
+      isGuest,
+      appName,
+      active,
+      select,
+      wallet,
+      walletLoading,
+      applyWallet,
+      refreshWallet,
+    }),
+    [
+      user,
+      isGuest,
+      appName,
+      active,
+      select,
+      wallet,
+      walletLoading,
+      applyWallet,
+      refreshWallet,
+    ]
+  );
 
   return (
-    <div className="flex h-[100dvh] overflow-hidden bg-background text-foreground">
-      {/* Mobile overlay */}
-      {mobileOpen && (
-        <button
-          type="button"
-          aria-label="Close menu"
-          onClick={() => setMobileOpen(false)}
-          className="fixed inset-0 z-30 bg-black/40 md:hidden"
-        />
-      )}
-
-      <Sidebar
-        user={user}
-        isGuest={isGuest}
-        appName={appName}
-        planName={planName}
-        messageQuota={messageQuota}
-        collapsed={collapsed}
-        mobileOpen={mobileOpen}
-        active={active}
-        onSelect={handleSelect}
-        onToggleCollapsed={toggleCollapsed}
-        onCloseMobile={() => setMobileOpen(false)}
-        router={router}
-      />
-
-      {/* Main */}
-      <div className="flex min-w-0 flex-1 flex-col">
-        {/* Mobile top bar */}
-        <header className="flex h-14 items-center gap-3 border-b border-border bg-surface px-4 md:hidden">
+    <ChromeProvider value={chrome}>
+      <div className="flex h-[100dvh] overflow-hidden bg-background text-foreground">
+        <Toaster richColors position="top-center" closeButton />
+        {/* Mobile overlay */}
+        {mobileOpen && (
           <button
             type="button"
-            aria-label="Open menu"
-            onClick={() => setMobileOpen(true)}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-foreground hover:bg-surface-muted"
-          >
-            <Menu size={20} />
-          </button>
-          <BrandMark name={appName} />
-        </header>
+            aria-label="Close menu"
+            onClick={closeMobile}
+            className="fixed inset-0 z-30 bg-black/40 md:hidden"
+          />
+        )}
 
-        <main className="flex flex-1 flex-col items-center justify-center overflow-y-auto px-4 py-10 sm:px-6">
-          <div className="w-full max-w-2xl">
-            <h1 className="text-center text-2xl font-extrabold tracking-tight text-heading sm:text-[32px] sm:leading-tight">
-              Hi {firstName(user.name)}, how can I help you today?
-            </h1>
+        <Sidebar
+          user={user}
+          isGuest={isGuest}
+          appName={appName}
+          planName={planName}
+          wallet={wallet}
+          walletLoading={walletLoading}
+          collapsed={collapsed}
+          mobileOpen={mobileOpen}
+          active={active}
+          onSelect={select}
+          onToggleCollapsed={toggleCollapsed}
+          onCloseMobile={closeMobile}
+          router={router}
+        />
 
-            <PromptBox
-              value={prompt}
-              onChange={setPrompt}
-              placeholder={promptPlaceholder(active, appName)}
-            />
+        {/* Main */}
+        <div className="flex min-w-0 flex-1 flex-col">
+          {/* Mobile top bar */}
+          <header className="flex h-14 items-center gap-3 border-b border-border bg-surface px-4 md:hidden">
+            <button
+              type="button"
+              aria-label="Open menu"
+              onClick={() => setMobileOpen(true)}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-foreground hover:bg-surface-muted"
+            >
+              <Menu size={20} />
+            </button>
+            <BrandMark name={appName} />
+          </header>
 
-            <div className="mt-5 flex flex-wrap items-center justify-center gap-2.5">
-              {QUICK_ACTIONS.map((a) => (
-                <button
-                  key={a.label}
-                  type="button"
-                  onClick={() => handleSelect(a.label, a.paid)}
-                  className={cn(
-                    "inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition-colors",
-                    active === a.label
-                      ? "border-accent-border bg-accent-tint text-accent-dark"
-                      : "border-border-strong bg-surface text-foreground hover:bg-surface-muted"
-                  )}
-                >
-                  <a.icon size={16} />
-                  {a.label}
-                </button>
-              ))}
-            </div>
-
-            {isGuest && (
-              <p className="mt-8 text-center text-sm text-muted">
-                You&apos;re exploring as a guest.{" "}
-                <Link
-                  href="/signup"
-                  className="font-semibold text-accent-dark hover:underline"
-                >
-                  Create a free account
-                </Link>{" "}
-                to save your work.
-              </p>
-            )}
-          </div>
-        </main>
+          {/* Each surface brings its own padding and vertical rhythm. */}
+          <main className="flex flex-1 flex-col overflow-y-auto">
+            {children}
+          </main>
+        </div>
       </div>
-    </div>
+    </ChromeProvider>
   );
 }
 
@@ -244,7 +231,8 @@ function Sidebar({
   isGuest,
   appName,
   planName,
-  messageQuota,
+  wallet,
+  walletLoading,
   collapsed,
   mobileOpen,
   active,
@@ -257,7 +245,8 @@ function Sidebar({
   isGuest: boolean;
   appName: string;
   planName: string;
-  messageQuota: number;
+  wallet: WalletDTO | null;
+  walletLoading: boolean;
   collapsed: boolean;
   mobileOpen: boolean;
   active: string;
@@ -318,25 +307,43 @@ function Sidebar({
         <ul className="space-y-0.5">
           {NAV_ITEMS.map((item) => {
             const isActive = active === item.label;
+            const className = cn(
+              "flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-[15px] font-medium transition-colors",
+              collapsed && "md:justify-center",
+              isActive
+                ? "bg-accent-tint text-accent-dark"
+                : "text-foreground hover:bg-surface-muted"
+            );
+            const inner = (
+              <>
+                <item.icon size={19} className="shrink-0" />
+                <span className={cn(collapsed && "md:hidden")}>
+                  {item.label}
+                </span>
+              </>
+            );
             return (
               <li key={item.label}>
-                <button
-                  type="button"
-                  onClick={() => onSelect(item.label, item.paid)}
-                  title={collapsed ? item.label : undefined}
-                  className={cn(
-                    "flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-[15px] font-medium transition-colors",
-                    collapsed && "md:justify-center",
-                    isActive
-                      ? "bg-accent-tint text-accent-dark"
-                      : "text-foreground hover:bg-surface-muted"
-                  )}
-                >
-                  <item.icon size={19} className="shrink-0" />
-                  <span className={cn(collapsed && "md:hidden")}>
-                    {item.label}
-                  </span>
-                </button>
+                {item.href ? (
+                  <Link
+                    href={item.href}
+                    onClick={onCloseMobile}
+                    aria-current={isActive ? "page" : undefined}
+                    title={collapsed ? item.label : undefined}
+                    className={className}
+                  >
+                    {inner}
+                  </Link>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => onSelect(item.label, item.paid)}
+                    title={collapsed ? item.label : undefined}
+                    className={className}
+                  >
+                    {inner}
+                  </button>
+                )}
               </li>
             );
           })}
@@ -360,12 +367,7 @@ function Sidebar({
               <Crown size={15} className="text-accent" />
               {planName}
             </div>
-            <p className="mt-1 text-xs text-muted">
-              0 out of {messageQuota} messages used
-            </p>
-            <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-border">
-              <div className="h-full w-0 rounded-full bg-accent" />
-            </div>
+            <CreditsMeter wallet={wallet} loading={walletLoading} />
             <button
               type="button"
               onClick={() => toast.info("Upgrade coming soon.")}
@@ -387,6 +389,62 @@ function Sidebar({
         router={router}
       />
     </aside>
+  );
+}
+
+const creditsFormat = new Intl.NumberFormat("en-US");
+
+/**
+ * Real credit balance for the plan card. Shows a neutral placeholder until the
+ * wallet is known — never a stand-in number the user could act on.
+ */
+function CreditsMeter({
+  wallet,
+  loading,
+}: {
+  wallet: WalletDTO | null;
+  loading: boolean;
+}) {
+  if (!wallet) {
+    return (
+      <>
+        <p className="mt-1 text-xs text-muted">
+          {loading ? "Loading credits…" : "Credits unavailable"}
+        </p>
+        <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-border" />
+      </>
+    );
+  }
+
+  const percent = Math.min(100, Math.max(0, wallet.percentUsed));
+
+  return (
+    <>
+      <p className="mt-1 text-xs text-muted">
+        {creditsFormat.format(wallet.used)} of{" "}
+        {creditsFormat.format(wallet.granted)} credits
+      </p>
+      <div
+        role="progressbar"
+        aria-label="Credits used"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={Math.round(percent)}
+        className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-border"
+      >
+        <div
+          className="h-full rounded-full bg-accent"
+          style={{ width: `${percent}%` }}
+        />
+      </div>
+      <p className="mt-1.5 text-[11px] text-muted">{percent}% used</p>
+      {wallet.weeklyLimit > 0 && (
+        <p className="text-[11px] text-muted">
+          This week: {creditsFormat.format(wallet.weeklyUsed)} of{" "}
+          {creditsFormat.format(wallet.weeklyLimit)}
+        </p>
+      )}
+    </>
   );
 }
 
@@ -485,82 +543,4 @@ function UserMenu({
       </button>
     </div>
   );
-}
-
-function PromptBox({
-  value,
-  onChange,
-  placeholder,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  placeholder: string;
-}) {
-  return (
-    <div className="mt-7 rounded-3xl border border-border-strong bg-surface p-2.5 shadow-sm focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/20">
-      <textarea
-        rows={1}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        className="block max-h-40 w-full resize-none bg-transparent px-3 py-2 text-[15px] text-foreground outline-none placeholder:text-muted/70"
-      />
-      <div className="mt-1 flex items-center justify-between px-1">
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            aria-label="Add attachment"
-            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-border text-muted hover:bg-surface-muted"
-          >
-            <Plus size={18} />
-          </button>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="hidden items-center gap-1 rounded-full border border-border px-3 py-1.5 text-xs font-medium text-muted sm:inline-flex">
-            Auto
-          </span>
-          <button
-            type="button"
-            aria-label="Voice input"
-            className="inline-flex h-9 w-9 items-center justify-center rounded-full text-muted hover:bg-surface-muted"
-          >
-            <Mic size={18} />
-          </button>
-          <button
-            type="button"
-            aria-label="Send"
-            disabled={value.trim().length === 0}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:bg-black disabled:opacity-40"
-          >
-            <ArrowUp size={18} />
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function firstName(name: string): string {
-  const trimmed = name?.trim() ?? "";
-  if (!trimmed) return "there";
-  return trimmed.split(/\s+/)[0];
-}
-
-function promptPlaceholder(active: string, appName: string): string {
-  switch (active) {
-    case "Image Studio":
-    case "Images":
-      return "Describe an image to create…";
-    case "Video Studio":
-    case "Videos":
-      return "Describe a video to generate…";
-    case "Slides":
-      return "Describe a presentation to build…";
-    case "Websites":
-      return "Describe a website to generate…";
-    case "Compare":
-      return "Ask something to compare across models…";
-    default:
-      return `Message ${appName}…`;
-  }
 }

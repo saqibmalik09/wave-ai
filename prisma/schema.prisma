@@ -34,11 +34,48 @@ enum UserStatus {
 
 /// Billing cadence for a plan. FREE and promotional plans never charge; the
 /// paid cadences are modelled now but no payment provider is wired yet.
+///
+/// QUARTER is appended LAST on purpose: MySQL enums are ordinal, so inserting
+/// it in the middle would renumber every existing row.
 enum PlanInterval {
   FREE
   MONTH
   YEAR
   LIFETIME
+  QUARTER
+}
+
+/// What a priced capability produces. CHAT is modelled so token pricing can be
+/// added without a migration; only IMAGE/VIDEO are quotable today.
+enum Modality {
+  IMAGE
+  VIDEO
+  CHAT
+}
+
+/// How a price row is metered.
+enum PriceUnit {
+  SECOND
+  IMAGE
+  TOKEN
+}
+
+/// What a ledger entry paid for.
+enum LedgerKind {
+  CHAT
+  IMAGE
+  VIDEO
+  ADJUST
+}
+
+/// Ledger lifecycle. Credits are RESERVED before any provider call, then
+/// SETTLED with the provider's own reported cost, REFUNDED on partial use, or
+/// FAILED (fully given back) when the provider never produced an asset.
+enum LedgerStatus {
+  RESERVED
+  SETTLED
+  REFUNDED
+  FAILED
 }
 
 /// Lifecycle of a user's subscription to a plan.
@@ -49,21 +86,23 @@ enum SubscriptionStatus {
 }
 
 model User {
-  id            String       @id @default(cuid())
-  email         String       @unique // always stored lower-cased
+  id            String     @id @default(cuid())
+  email         String     @unique // always stored lower-cased
   name          String
   /// Null for Google-only accounts (no local password). Email/password users always have a hash.
-  passwordHash  String?      @db.VarChar(512)
+  passwordHash  String?    @db.VarChar(512)
   /// Google subject (`sub`). Unique when set; null for email/password-only users.
-  googleId      String?      @unique
+  googleId      String?    @unique
   phone         String? // nullable; editable now, OTP-ready via phoneVerified
-  phoneVerified Boolean      @default(false)
-  role          UserRole     @default(USER)
-  status        UserStatus   @default(ACTIVE)
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
+  phoneVerified Boolean    @default(false)
+  role          UserRole   @default(USER)
+  status        UserStatus @default(ACTIVE)
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
 
   subscriptions Subscription[]
+  creditLedger  CreditLedger[]
+  weeklyUsage   WeeklyUsage[]
 
   // email is already unique (indexed). phone is a lookup/filter column.
   @@index([phone])
@@ -75,17 +114,23 @@ model User {
 }
 
 model Plan {
-  id           String        @id @default(cuid())
-  code         String        @unique // e.g. "free" / "pro" / "promo"
-  name         String
-  priceCents   Int           @default(0)
-  currency     String        @default("usd")
-  interval     PlanInterval  @default(FREE)
-  messageQuota Int           @default(0)
-  isPromo      Boolean       @default(false)
-  features     Json          @default("{}")
-  active       Boolean       @default(true)
-  createdAt    DateTime      @default(now())
+  id               String       @id @default(cuid())
+  code             String       @unique // e.g. "free" / "pro" / "promo"
+  name             String
+  priceCents       Int          @default(0)
+  currency         String       @default("usd")
+  interval         PlanInterval @default(FREE)
+  /// Legacy chat-message allowance. Kept for older clients — credits are the
+  /// metering unit now, but nothing may read this column less often.
+  messageQuota     Int          @default(0)
+  /// Credits granted each period. 1 credit = $0.0001 (10,000 credits = $1).
+  creditsPerPeriod Int          @default(0)
+  /// Per-ISO-week credit ceiling. 0 = no weekly cap.
+  weeklyCredits    Int          @default(0)
+  isPromo          Boolean      @default(false)
+  features         Json         @default("{}")
+  active           Boolean      @default(true)
+  createdAt        DateTime     @default(now())
 
   subscriptions Subscription[]
   promoCodes    PromoCode[]
@@ -96,15 +141,21 @@ model Plan {
 }
 
 model Subscription {
-  id        String             @id @default(cuid())
-  userId    String
-  planId    String
-  status    SubscriptionStatus @default(ACTIVE)
-  isFree    Boolean            @default(false)
-  isPromo   Boolean            @default(false)
-  startAt   DateTime           @default(now())
-  endAt     DateTime? // null = no expiry (free / lifetime)
-  createdAt DateTime           @default(now())
+  id             String             @id @default(cuid())
+  userId         String
+  planId         String
+  status         SubscriptionStatus @default(ACTIVE)
+  isFree         Boolean            @default(false)
+  isPromo        Boolean            @default(false)
+  startAt        DateTime           @default(now())
+  endAt          DateTime? // null = no expiry (free / lifetime)
+  createdAt      DateTime           @default(now())
+  /// Snapshot of plan.creditsPerPeriod taken when this subscription was
+  /// granted, so later price changes never retroactively alter an entitlement.
+  creditsGranted Int                @default(0)
+  /// Credits consumed this period: settled spend PLUS still-reserved holds.
+  /// Mutated only through the ledger path in src/lib/db/credits.ts.
+  creditsUsed    Int                @default(0)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   plan Plan @relation(fields: [planId], references: [id], onDelete: Restrict)
@@ -120,14 +171,14 @@ model Subscription {
 /// Optional promo-code redemption model. Ready for a future "redeem code"
 /// flow; not wired to any public endpoint yet.
 model PromoCode {
-  id              String    @id @default(cuid())
-  code            String    @unique
-  planId          String
-  maxRedemptions  Int       @default(0) // 0 = unlimited
-  redeemedCount   Int       @default(0)
-  expiresAt       DateTime?
-  active          Boolean   @default(true)
-  createdAt       DateTime  @default(now())
+  id             String    @id @default(cuid())
+  code           String    @unique
+  planId         String
+  maxRedemptions Int       @default(0) // 0 = unlimited
+  redeemedCount  Int       @default(0)
+  expiresAt      DateTime?
+  active         Boolean   @default(true)
+  createdAt      DateTime  @default(now())
 
   plan Plan @relation(fields: [planId], references: [id], onDelete: Cascade)
 
@@ -147,4 +198,94 @@ model BrandConfig {
   updatedAt    DateTime @updatedAt
 
   @@map("brand_config")
+}
+
+/// Priced capability catalogue — the ONLY place a generation's price lives.
+/// Mirrors `ModelPriceDTO` in src/lib/ai/types.ts: the server reads these rows,
+/// hands them to the shared pure `quote()` and the browser quotes with the same
+/// function, so client and server can never disagree on a price.
+///
+/// Providers are DATA here too: swapping to a cheaper vendor is an UPDATE
+/// (`active = false` on the old rows, insert the new ones) — no code change and
+/// no deploy. `credits` is per unit (per second / per image / per 1K tokens).
+model ModelPrice {
+  id                String    @id @default(cuid())
+  /// Opaque provider key, e.g. "kie" / "xai". Must match a registered adapter.
+  providerId        String
+  modelId           String
+  modality          Modality
+  /// Null for images and chat; "480p" / "720p" for video.
+  resolution        String?
+  unit              PriceUnit
+  credits           Int
+  supportsReference Boolean   @default(false)
+  /// Quality tier shown in the UI, e.g. "Standard" / "Fallback HQ".
+  label             String
+  active            Boolean   @default(true)
+  createdAt         DateTime  @default(now())
+
+  // One price per provider+model+resolution. NOTE: MySQL treats NULLs as
+  // distinct, so image rows (resolution = NULL) are deduplicated by the
+  // seed's read-then-write upsert rather than by this constraint.
+  @@unique([providerId, modelId, resolution])
+  // The composer's hot read: every active row for one modality.
+  @@index([active, modality])
+  @@map("model_prices")
+}
+
+/// Double-entry-style credit ledger. Every credit movement is a row, so a
+/// balance is always explainable and a retry can never charge twice.
+///
+/// `idempotencyKey` is the enforcement point: the caller sends one per
+/// generation attempt, the unique index makes a replay collide, and the repo
+/// returns the existing row instead of reserving again.
+model CreditLedger {
+  id                String       @id @default(cuid())
+  userId            String
+  /// The subscription whose counters this row moved. Plain column, not a FK:
+  /// financial history must outlive the subscription row it refers to.
+  subscriptionId    String?
+  kind              LedgerKind
+  /// What we held up front (the server-side quote).
+  estimatedCredits  Int
+  /// What it actually cost once the provider reported back. Null until settled.
+  actualCredits     Int?
+  /// Provider-reported cost in ticks (1 USD = 10^10). Null when the provider
+  /// does not report a cost (then the estimate stands) or when nothing was
+  /// charged because the job failed.
+  costTicks         BigInt?
+  status            LedgerStatus @default(RESERVED)
+  idempotencyKey    String       @unique
+  providerId        String?
+  providerRequestId String?
+  /// Short operator note for manual ADJUST rows. Never holds user content.
+  note              String?      @db.VarChar(255)
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // "this user's recent activity", cursor-paginated.
+  @@index([userId, createdAt])
+  // Sweeper: RESERVED rows older than the provider timeout must be refunded.
+  @@index([status, createdAt])
+  @@map("credit_ledger")
+}
+
+/// Per-user, per-ISO-week credit counter. A separate row (rather than a column
+/// on Subscription) so the weekly window resets by key, not by a cron job, and
+/// so the increment is a single indexed upsert on the hot path.
+///
+/// `weekStart` is always the Monday 00:00 UTC of the week — see
+/// `isoWeekStart()` in src/lib/db/credits.ts, the single source of that math.
+model WeeklyUsage {
+  id          String   @id @default(cuid())
+  userId      String
+  weekStart   DateTime @db.Date
+  creditsUsed Int      @default(0)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, weekStart])
+  @@map("weekly_usage")
 }

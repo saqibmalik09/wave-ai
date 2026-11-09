@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { exchangeGoogleCode, getGoogleConfig } from "@/lib/auth/google";
 import { upsertGoogleUser } from "@/lib/auth/store";
 import { attachSession } from "@/lib/auth/session";
+import { ensureDefaultSubscription } from "@/lib/db/subscriptions";
 import type { SessionUser } from "@/lib/auth/types";
 
 const STATE_COOKIE = "aw_oauth_state";
@@ -58,6 +59,10 @@ export async function GET(request: NextRequest) {
     if (user.status === "SUSPENDED") {
       return redirectLogin("account_suspended");
     }
+
+    // First Google sign-in creates the account, so it needs the same free-plan
+    // start as email signup. Idempotent, so a returning user is untouched.
+    await ensureDefaultSubscription(user.id);
 
     const sessionUser: SessionUser = {
       id: user.id,

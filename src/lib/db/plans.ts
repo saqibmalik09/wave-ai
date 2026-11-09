@@ -16,6 +16,8 @@ const planSelect = {
   currency: true,
   interval: true,
   messageQuota: true,
+  creditsPerPeriod: true,
+  weeklyCredits: true,
   isPromo: true,
   features: true,
   active: true,
@@ -77,6 +79,10 @@ export type CreatePlanInput = {
   currency?: string;
   interval?: PlanInterval;
   messageQuota?: number;
+  /** Credits granted each period. 1 credit = $0.0001. */
+  creditsPerPeriod?: number;
+  /** Per-ISO-week credit ceiling; 0 = uncapped. */
+  weeklyCredits?: number;
   isPromo?: boolean;
   features?: Prisma.InputJsonValue;
   active?: boolean;
@@ -91,6 +97,8 @@ export async function createPlan(input: CreatePlanInput): Promise<PlanDTO> {
       currency: (input.currency ?? "usd").trim().toLowerCase(),
       interval: input.interval ?? "FREE",
       messageQuota: input.messageQuota ?? 0,
+      creditsPerPeriod: input.creditsPerPeriod ?? 0,
+      weeklyCredits: input.weeklyCredits ?? 0,
       isPromo: input.isPromo ?? false,
       features: input.features ?? {},
       active: input.active ?? true,
@@ -105,6 +113,8 @@ export type UpdatePlanInput = {
   currency?: string;
   interval?: PlanInterval;
   messageQuota?: number;
+  creditsPerPeriod?: number;
+  weeklyCredits?: number;
   isPromo?: boolean;
   features?: Prisma.InputJsonValue;
   active?: boolean;
@@ -127,6 +137,12 @@ export async function updatePlan(
       ...(input.interval !== undefined ? { interval: input.interval } : {}),
       ...(input.messageQuota !== undefined
         ? { messageQuota: input.messageQuota }
+        : {}),
+      ...(input.creditsPerPeriod !== undefined
+        ? { creditsPerPeriod: input.creditsPerPeriod }
+        : {}),
+      ...(input.weeklyCredits !== undefined
+        ? { weeklyCredits: input.weeklyCredits }
         : {}),
       ...(input.isPromo !== undefined ? { isPromo: input.isPromo } : {}),
       ...(input.features !== undefined ? { features: input.features } : {}),

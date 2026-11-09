@@ -38,6 +38,10 @@ yarn-error.log*
 # local file-backed data store (dev user store)
 /.data
 
+# uploaded reference images (local object-store driver). Throwaway: every file
+# is reclaimed by the upload sweeper once its signed URL expires.
+/.uploads
+
 # vercel
 .vercel
 

@@ -8,6 +8,7 @@ const INTERVALS: readonly PlanInterval[] = [
   "MONTH",
   "YEAR",
   "LIFETIME",
+  "QUARTER",
 ];
 
 function parseInterval(value: unknown): PlanInterval | undefined {
@@ -70,12 +71,33 @@ export async function PATCH(
     }
     patch.messageQuota = v;
   }
+  if (data.creditsPerPeriod !== undefined) {
+    const v = Number(data.creditsPerPeriod);
+    if (!Number.isInteger(v) || v < 0) {
+      return NextResponse.json(
+        { error: "creditsPerPeriod must be a non-negative integer." },
+        { status: 400 }
+      );
+    }
+    patch.creditsPerPeriod = v;
+  }
+  if (data.weeklyCredits !== undefined) {
+    // 0 means "no weekly cap" — a valid value, not a missing one.
+    const v = Number(data.weeklyCredits);
+    if (!Number.isInteger(v) || v < 0) {
+      return NextResponse.json(
+        { error: "weeklyCredits must be a non-negative integer (0 = no cap)." },
+        { status: 400 }
+      );
+    }
+    patch.weeklyCredits = v;
+  }
   if (data.currency !== undefined) patch.currency = String(data.currency);
   if (data.interval !== undefined) {
     const parsed = parseInterval(data.interval);
     if (!parsed) {
       return NextResponse.json(
-        { error: "interval must be FREE | MONTH | YEAR | LIFETIME." },
+        { error: "interval must be FREE | MONTH | QUARTER | YEAR | LIFETIME." },
         { status: 400 }
       );
     }

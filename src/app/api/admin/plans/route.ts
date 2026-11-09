@@ -8,6 +8,7 @@ const INTERVALS: readonly PlanInterval[] = [
   "MONTH",
   "YEAR",
   "LIFETIME",
+  "QUARTER",
 ];
 
 function parseInterval(value: unknown): PlanInterval | undefined {
@@ -65,6 +66,12 @@ export async function POST(request: Request) {
     data.priceCents !== undefined ? Number(data.priceCents) : undefined;
   const messageQuota =
     data.messageQuota !== undefined ? Number(data.messageQuota) : undefined;
+  const creditsPerPeriod =
+    data.creditsPerPeriod !== undefined
+      ? Number(data.creditsPerPeriod)
+      : undefined;
+  const weeklyCredits =
+    data.weeklyCredits !== undefined ? Number(data.weeklyCredits) : undefined;
 
   if (priceCents !== undefined && (!Number.isInteger(priceCents) || priceCents < 0)) {
     return NextResponse.json(
@@ -81,6 +88,25 @@ export async function POST(request: Request) {
       { status: 400 }
     );
   }
+  if (
+    creditsPerPeriod !== undefined &&
+    (!Number.isInteger(creditsPerPeriod) || creditsPerPeriod < 0)
+  ) {
+    return NextResponse.json(
+      { error: "creditsPerPeriod must be a non-negative integer." },
+      { status: 400 }
+    );
+  }
+  // 0 means "no weekly cap" — it is a valid value, not a missing one.
+  if (
+    weeklyCredits !== undefined &&
+    (!Number.isInteger(weeklyCredits) || weeklyCredits < 0)
+  ) {
+    return NextResponse.json(
+      { error: "weeklyCredits must be a non-negative integer (0 = no cap)." },
+      { status: 400 }
+    );
+  }
 
   try {
     const plan = await createPlan({
@@ -90,6 +116,8 @@ export async function POST(request: Request) {
       currency: data.currency !== undefined ? String(data.currency) : undefined,
       interval: parseInterval(data.interval),
       messageQuota,
+      creditsPerPeriod,
+      weeklyCredits,
       isPromo: data.isPromo !== undefined ? Boolean(data.isPromo) : undefined,
       features:
         data.features !== undefined

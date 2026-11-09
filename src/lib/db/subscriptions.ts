@@ -12,7 +12,7 @@
  * comped). The schema is ready for a billing integration later.
  */
 import { prisma } from "@/lib/db/prisma";
-import type { Prisma } from "@prisma/client";
+import type { PlanInterval, Prisma } from "@prisma/client";
 
 const currentSelect = {
   id: true,
@@ -21,12 +21,16 @@ const currentSelect = {
   isPromo: true,
   startAt: true,
   endAt: true,
+  creditsGranted: true,
+  creditsUsed: true,
   plan: {
     select: {
       id: true,
       code: true,
       name: true,
       messageQuota: true,
+      creditsPerPeriod: true,
+      weeklyCredits: true,
       interval: true,
       isPromo: true,
       priceCents: true,
@@ -58,10 +62,54 @@ export async function getCurrentSubscription(
   return row;
 }
 
+/**
+ * Plan code every brand-new account starts on. Kept as data in the `plans`
+ * table — this constant only names the row to look up, it does not define it.
+ */
+const DEFAULT_PLAN_CODE = "free";
+
+/**
+ * Puts a freshly created account on the default free plan so it has credits
+ * immediately instead of having every generation refused until an admin grants
+ * something.
+ *
+ * Deliberately best-effort and never throws: a missing/inactive `free` row, or
+ * a race between two sign-in attempts for the same Google account, must not
+ * turn a successful registration into a failed one. The caller treats this as
+ * fire-and-forget.
+ *
+ * Idempotent: if the user already has an ACTIVE subscription (an admin grant,
+ * or a second call), it is left exactly as it is.
+ */
+export async function ensureDefaultSubscription(
+  userId: string
+): Promise<void> {
+  try {
+    const existing = await prisma.subscription.findFirst({
+      where: { userId, status: "ACTIVE" },
+      select: { id: true },
+    });
+    if (existing) return;
+
+    const plan = await prisma.plan.findUnique({
+      where: { code: DEFAULT_PLAN_CODE },
+      select: { id: true, active: true },
+    });
+    if (!plan || !plan.active) return;
+
+    await grantSubscription({ userId, planId: plan.id });
+  } catch {
+    // Never block registration on entitlement setup.
+  }
+}
+
 export type GrantSubscriptionInput = {
   userId: string;
   planId: string;
-  /** Optional explicit expiry; omit for free/lifetime (no expiry). */
+  /**
+   * Explicit expiry. Omit it to derive the expiry from the plan's interval;
+   * pass `null` to force "no expiry".
+   */
   endAt?: Date | null;
   /** Overrides; default derived from the plan. */
   isFree?: boolean;
@@ -69,17 +117,52 @@ export type GrantSubscriptionInput = {
 };
 
 /**
+ * Period end for a billing cadence, or null when the plan never expires.
+ * Exported so an admin UI and a future billing webhook compute the same date.
+ */
+export function subscriptionEndAt(
+  interval: PlanInterval,
+  from: Date = new Date()
+): Date | null {
+  const shifted = new Date(from.getTime());
+  switch (interval) {
+    case "MONTH":
+      shifted.setUTCMonth(shifted.getUTCMonth() + 1);
+      return shifted;
+    case "QUARTER":
+      shifted.setUTCMonth(shifted.getUTCMonth() + 3);
+      return shifted;
+    case "YEAR":
+      shifted.setUTCFullYear(shifted.getUTCFullYear() + 1);
+      return shifted;
+    // FREE and LIFETIME never expire.
+    default:
+      return null;
+  }
+}
+
+/**
  * Grants (or changes) a user's subscription to a plan. Cancels any existing
  * ACTIVE subscriptions first so there is a single source of truth for the
  * user's current entitlement, then creates the new ACTIVE row — both in one
  * transaction.
+ *
+ * The plan's `creditsPerPeriod` is SNAPSHOT onto the subscription
+ * (`creditsGranted`) and `creditsUsed` starts at 0: a later price change must
+ * never retroactively shrink or inflate an entitlement someone already has.
  */
 export async function grantSubscription(
   input: GrantSubscriptionInput
 ): Promise<CurrentSubscription> {
   const plan = await prisma.plan.findUnique({
     where: { id: input.planId },
-    select: { id: true, interval: true, isPromo: true, priceCents: true },
+    select: {
+      id: true,
+      interval: true,
+      isPromo: true,
+      priceCents: true,
+      creditsPerPeriod: true,
+    },
   });
   if (!plan) {
     throw new Error(`Plan not found: ${input.planId}`);
@@ -88,6 +171,12 @@ export async function grantSubscription(
   const isFree =
     input.isFree ?? (plan.interval === "FREE" || plan.priceCents === 0);
   const isPromo = input.isPromo ?? plan.isPromo;
+  const startAt = new Date();
+  // `undefined` = "derive it"; an explicit null stays null (no expiry).
+  const endAt =
+    input.endAt !== undefined
+      ? input.endAt
+      : subscriptionEndAt(plan.interval, startAt);
 
   const [, created] = await prisma.$transaction([
     prisma.subscription.updateMany({
@@ -101,7 +190,10 @@ export async function grantSubscription(
         status: "ACTIVE",
         isFree,
         isPromo,
-        endAt: input.endAt ?? null,
+        startAt,
+        endAt,
+        creditsGranted: plan.creditsPerPeriod,
+        creditsUsed: 0,
       },
       select: currentSelect,
     }),

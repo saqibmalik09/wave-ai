@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createUser } from "@/lib/auth/store";
 import { createSession } from "@/lib/auth/session";
+import { ensureDefaultSubscription } from "@/lib/db/subscriptions";
 import {
   isStrongPassword,
   isValidEmail,
@@ -49,6 +50,10 @@ export async function POST(request: Request) {
       { status: 409 }
     );
   }
+
+  // New accounts start on the free plan so they have credits right away.
+  // Best-effort: never fails the registration.
+  await ensureDefaultSubscription(result.user.id);
 
   const sessionUser: SessionUser = {
     id: result.user.id,
